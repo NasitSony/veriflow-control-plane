@@ -5,12 +5,9 @@ This runbook describes how to start the Veriflow AI infrastructure control-plane
 📦 Prerequisites
 
 Ensure the following are installed:
-
-Docker + Docker Compose
-
-kubectl configured to access your Kubernetes cluster
-
-Ports 8080 and 5436 available
+- Docker + Docker Compose
+- kubectl configured to access your Kubernetes cluster
+- Ports 8080 and 5436 available
 
 🚀 1. Start Infrastructure (Postgres)
 From the project root:
@@ -19,11 +16,10 @@ From the project root:
 docker compose up -d
 docker compose ps
 ```
-
 Verify Postgres is healthy before proceeding.
 
 🧠 2. Run Job API Service
-
+```bash
 docker run --rm -it \
   --network host \
   -v "$PWD":/app \
@@ -31,14 +27,14 @@ docker run --rm -it \
   -e DATABASE_URL="postgres://veriflow:veriflow@localhost:5436/veriflow?sslmode=disable" \
   golang:1.25-bookworm \
   /usr/local/go/bin/go run ./cmd/job-api
+```
 
 Expected log:
-job-api listening on :8080
+- job-api listening on :8080
 
 ⚙️ 3. Run Scheduler Service
-
 Open a new terminal:
-
+```bash
 docker run --rm -it \
   --network host \
   -v "$PWD":/app \
@@ -47,9 +43,10 @@ docker run --rm -it \
   -e DATABASE_URL="postgres://veriflow:veriflow@localhost:5436/veriflow?sslmode=disable" \
   golang:1.25-bookworm \
   /usr/local/go/bin/go run ./cmd/scheduler
+```
 
 Expected log:
-scheduler started queue=default interval=700ms
+- scheduler started queue=default interval=700ms
 
 📨 4. Submit a Job
 
