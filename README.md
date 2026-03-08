@@ -10,7 +10,7 @@ Run a full end-to-end demo:
 
 ```bash
 ./scripts/demo.sh
-
+```
 ---
 
 ## Architecture
