@@ -13,11 +13,12 @@ kubectl configured to access your Kubernetes cluster
 Ports 8080 and 5436 available
 
 🚀 1. Start Infrastructure (Postgres)
-
 From the project root:
 
+```bash
 docker compose up -d
 docker compose ps
+```
 
 Verify Postgres is healthy before proceeding.
 
