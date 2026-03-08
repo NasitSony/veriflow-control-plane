@@ -11,6 +11,15 @@ Run a full end-to-end demo:
 ```bash
 ./scripts/demo.sh
 ```
+
+This script will:
+- submit a job
+- show Kubernetes job + pod creation
+- print pod logs
+- display database run state
+- display event lifecycle timeline
+
+See **RUNBOOK.md** for full step-by-step instructions.
 ---
 
 ## Architecture
