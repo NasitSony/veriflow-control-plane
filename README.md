@@ -4,6 +4,13 @@ Veriflow is a small, runnable **AI/ML infrastructure-style job platform**: a con
 
 It’s intentionally minimal, but uses real production patterns: **idempotent submission**, **concurrency-safe claiming (SKIP LOCKED)**, **run attempts**, **retry backoff gating**, and **K8s reconciliation**.
 
+## 🚀 One-Command Demo
+
+Run a full end-to-end demo:
+
+```bash
+./scripts/demo.sh
+
 ---
 
 ## Architecture
