@@ -33,6 +33,7 @@ Expected log:
 - job-api listening on :8080
 
 ⚙️ 3. Run Scheduler Service
+
 Open a new terminal:
 ```bash
 docker run --rm -it \
