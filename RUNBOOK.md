@@ -1,15 +1,15 @@
-Veriflow Runbook
+**Veriflow Runbook**
 
 This runbook describes how to start the Veriflow AI infrastructure control-plane, submit a job, and observe its lifecycle end-to-end.
 
-📦 Prerequisites
+**📦 Prerequisites**
 
 Ensure the following are installed:
 - Docker + Docker Compose
 - kubectl configured to access your Kubernetes cluster
 - Ports 8080 and 5436 available
 
-🚀 1. Start Infrastructure (Postgres)
+**🚀 1. Start Infrastructure (Postgres)**
 From the project root:
 
 ```bash
@@ -18,7 +18,7 @@ docker compose ps
 ```
 Verify Postgres is healthy before proceeding.
 
-🧠 2. Run Job API Service
+**🧠 2. Run Job API Service**
 ```bash
 docker run --rm -it \
   --network host \
@@ -32,7 +32,7 @@ docker run --rm -it \
 Expected log:
 - job-api listening on :8080
 
-⚙️ 3. Run Scheduler Service
+**⚙️ 3. Run Scheduler Service**
 
 Open a new terminal:
 ```bash
@@ -49,7 +49,7 @@ docker run --rm -it \
 Expected log:
 - scheduler started queue=default interval=700ms
 
-📨 4. Submit a Job
+**📨 4. Submit a Job**
 
 Open another terminal:
 ```bash
@@ -65,7 +65,7 @@ curl -X POST localhost:8080/v1/jobs \
 
 You should receive a JSON response containing the job ID.
 
-☸️ 5. Observe Kubernetes Execution
+**☸️ 5. Observe Kubernetes Execution**
 
 List jobs:
 - kubectl get jobs
@@ -84,7 +84,8 @@ hello-from-veriflow
 done
 bash
 
-🗄️ 6. Inspect Job Lifecycle in Database
+**🗄️ 6. Inspect Job Lifecycle in Database**
+
 Recent Runs
 ```bash
 docker compose exec -T postgres psql -U veriflow -d veriflow -c \
@@ -107,7 +108,7 @@ JOB_SUCCEEDED
 ```
 
 
-🧹 7. Reset System State 
+**🧹 7. Reset System State**
 
 Clear old records:
 ```bash
@@ -115,7 +116,7 @@ docker compose exec -T postgres psql -U veriflow -d veriflow -c \
 "truncate events, runs, jobs restart identity;"
 ```
 
-🛑 8. Stop Services
+**🛑 8. Stop Services**
 
 Stop Postgres:
 ```bash
@@ -124,7 +125,7 @@ docker compose down
 
 Stop API and scheduler with Ctrl + C.
 
-✅ End-to-End Success Criteria
+**✅ End-to-End Success Criteria**
 
 The system is functioning correctly when:
 - API accepts job submission
@@ -132,7 +133,7 @@ The system is functioning correctly when:
 - Kubernetes Job completes
 - Database reflects correct lifecycle events
 
-🧭 Project Summary
+**🧭 Project Summary**
 
 Veriflow is a control-plane service that:
 - Accepts job submissions via REST API
