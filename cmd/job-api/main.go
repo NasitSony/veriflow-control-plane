@@ -80,6 +80,27 @@ func main() {
 			return
 		}
 
+		// 🔥 ADD THIS BLOCK
+		if spec.JobType == "training" && spec.DatasetURI == "" {
+			writeError(w, 400, "invalid_spec", "datasetUri required for training jobs")
+			return
+		}
+
+		if spec.GPUCount < 0 {
+			writeError(w, 400, "invalid_spec", "gpuCount must be >= 0")
+			return
+		}
+
+		log.Printf(
+			"submit job request: type=%s gpu=%d dataset=%s artifact=%s priority=%d image=%s",
+			spec.JobType,
+			spec.GPUCount,
+			spec.DatasetURI,
+			spec.ArtifactURI,
+			spec.Priority,
+			spec.Image,
+		)
+
 		job, replay, err := store.CreateJobIdempotent(r.Context(), idemKey, spec)
 		if err != nil {
 			writeError(w, 400, "create_failed", err.Error())

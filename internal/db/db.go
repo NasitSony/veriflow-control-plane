@@ -24,17 +24,27 @@ const (
 type RunState string
 
 type JobSpec struct {
-	Image     string            `json:"image"`
-	Command   []string          `json:"command,omitempty"`
-	Args      []string          `json:"args,omitempty"`
-	Env       map[string]string `json:"env,omitempty"`
+	Image   string            `json:"image"`
+	Command []string          `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+
 	Resources struct {
 		CPU    string `json:"cpu,omitempty"`
 		Memory string `json:"memory,omitempty"`
 	} `json:"resources,omitempty"`
+
 	Queue      string `json:"queue,omitempty"`
 	Priority   int    `json:"priority,omitempty"`
 	MaxRetries int    `json:"max_retries,omitempty"`
+
+	// 🔥 NEW AI FIELDS
+	JobType       string `json:"jobType,omitempty"`  // training | batch-inference
+	GPUCount      int    `json:"gpuCount,omitempty"` // number of GPUs
+	DatasetURI    string `json:"datasetUri,omitempty"`
+	CheckpointURI string `json:"checkpointUri,omitempty"`
+	ArtifactURI   string `json:"artifactUri,omitempty"`
+	Framework     string `json:"framework,omitempty"` // pytorch | custom
 }
 
 type Job struct {
