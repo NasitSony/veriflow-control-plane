@@ -59,10 +59,22 @@ type Job struct {
 }
 
 type Run struct {
-	RunID   uuid.UUID `json:"run_id"`
-	JobID   uuid.UUID `json:"job_id"`
-	Attempt int       `json:"attempt"`
-	State   RunState  `json:"state"`
+	RunID       uuid.UUID
+	JobID       uuid.UUID
+	Attempt     int
+	State       string
+	K8sJobName  string
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
+	ErrorReason *string
+}
+
+type Event struct {
+	JobID     uuid.UUID
+	RunID     *uuid.UUID
+	Type      string
+	Payload   []byte
+	CreatedAt time.Time
 }
 
 var ErrNotFound = errors.New("not found")
@@ -266,4 +278,85 @@ func getJobByIDTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Job, error) {
 		return Job{}, err
 	}
 	return j, nil
+}
+
+func (s *Store) GetJob(ctx context.Context, jobID uuid.UUID) (Job, error) {
+	var j Job
+	err := s.pool.QueryRow(ctx, `
+		select job_id, state, queue, priority, max_retries, next_run_at, spec, created_at
+		from jobs
+		where job_id=$1
+	`, jobID).Scan(
+		&j.JobID,
+		&j.State,
+		&j.Queue,
+		&j.Priority,
+		&j.MaxRetries,
+		&j.NextRunAt,
+		&j.Spec,
+		&j.CreatedAt,
+	)
+	return j, err
+}
+
+func (s *Store) ListRunsForJob(ctx context.Context, jobID uuid.UUID) ([]Run, error) {
+	rows, err := s.pool.Query(ctx, `
+		select run_id, job_id, attempt, state, k8s_job_name, started_at, finished_at, error_reason
+		from runs
+		where job_id=$1
+		order by created_at asc
+	`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(
+			&r.RunID,
+			&r.JobID,
+			&r.Attempt,
+			&r.State,
+			&r.K8sJobName,
+			&r.StartedAt,
+			&r.FinishedAt,
+			&r.ErrorReason,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListEventsForJob(ctx context.Context, jobID uuid.UUID, limit int) ([]Event, error) {
+	rows, err := s.pool.Query(ctx, `
+		select job_id, run_id, type, payload, created_at
+		from events
+		where job_id=$1
+		order by created_at asc
+		limit $2
+	`, jobID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(
+			&e.JobID,
+			&e.RunID,
+			&e.Type,
+			&e.Payload,
+			&e.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

@@ -95,7 +95,7 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 			'reason', $5
 		)
 	)
-  `, jobID, runID, attempt, maxRetries, reason)
+    `, jobID, runID, attempt, maxRetries, reason)
 
 	return tx.Commit(ctx)
 }

@@ -158,15 +158,6 @@ func main() {
 
 			command := j.Spec.Command
 			if j.Spec.JobType == "training" && len(command) == 0 {
-				//resumeMsg := "echo no checkpoint provided; "
-				//if j.Spec.CheckpointURI != "" {
-				//resumeMsg = fmt.Sprintf("echo resuming from checkpoint=%s; ", j.Spec.CheckpointURI)
-				//}
-
-				//artifactMsg := "echo no artifact output configured; "
-				//if j.Spec.ArtifactURI != "" {
-				//artifactMsg = fmt.Sprintf("echo writing artifact to=%s; ", j.Spec.ArtifactURI)
-				//}
 
 				command = []string{
 					"/bin/sh",

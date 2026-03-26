@@ -134,7 +134,24 @@ func main() {
 			writeError(w, 500, "db_error", err.Error())
 			return
 		}
-		writeJSON(w, 200, map[string]any{"job": job})
+
+		runs, err := store.ListRunsForJob(r.Context(), id)
+		if err != nil {
+			writeError(w, 500, "runs_error", err.Error())
+			return
+		}
+
+		events, err := store.ListEventsForJob(r.Context(), id, 50)
+		if err != nil {
+			writeError(w, 500, "events_error", err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"job":    job,
+			"runs":   runs,
+			"events": events,
+		})
 	})
 
 	srv := &http.Server{
