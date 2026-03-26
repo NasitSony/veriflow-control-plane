@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,23 +10,28 @@ import (
 	"syscall"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/NasitSony/veriflow/internal/db"
-
 	"github.com/NasitSony/veriflow/internal/k8s"
+	"github.com/jackc/pgx/v5/pgxpool"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type NodeCapacity struct {
-	Name      string
-	TotalGPUs int
-	UsedGPUs  int
+	Name      string `json:"name"`
+	TotalGPUs int    `json:"totalGPUs"`
+	UsedGPUs  int    `json:"usedGPUs"`
 }
 
 func (n NodeCapacity) FreeGPUs() int {
 	return n.TotalGPUs - n.UsedGPUs
+}
+
+type SchedulerStatus struct {
+	Queue        string         `json:"queue"`
+	Nodes        []NodeCapacity `json:"nodes"`
+	LastUpdated  time.Time      `json:"lastUpdated"`
+	ActiveRuns   int            `json:"activeRuns"`
+	PendingClaim bool           `json:"pendingClaim"`
 }
 
 func pickNodeForJob(nodes []NodeCapacity, gpuCount int) (NodeCapacity, bool) {
@@ -35,6 +41,17 @@ func pickNodeForJob(nodes []NodeCapacity, gpuCount int) (NodeCapacity, bool) {
 		}
 	}
 	return NodeCapacity{}, false
+}
+
+func writeSchedulerStatus(path string, status SchedulerStatus) {
+	data, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		log.Printf("marshal scheduler status error: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("write scheduler status error: %v", err)
+	}
 }
 
 func main() {
@@ -47,6 +64,8 @@ func main() {
 	dsn := envOr("DATABASE_URL", "postgres://veriflow:veriflow@localhost:5436/veriflow?sslmode=disable")
 	queue := envOr("QUEUE", "default")
 	interval := envOrDuration("SCHED_INTERVAL", 700*time.Millisecond)
+
+	statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -111,6 +130,13 @@ func main() {
 		{Name: "gpu-node-b", TotalGPUs: 4, UsedGPUs: 0},
 	}
 
+	writeSchedulerStatus(statusPath, SchedulerStatus{
+		Queue:       queue,
+		Nodes:       nodes,
+		LastUpdated: time.Now().UTC(),
+		ActiveRuns:  0,
+	})
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -122,6 +148,15 @@ func main() {
 			log.Printf("scheduler shutting down")
 			return
 		case <-ticker.C:
+
+			writeSchedulerStatus(statusPath, SchedulerStatus{
+				Queue:        queue,
+				Nodes:        nodes,
+				LastUpdated:  time.Now().UTC(),
+				ActiveRuns:   0,
+				PendingClaim: true,
+			})
+
 			j, run, ok, err := store.ClaimNextPendingJob(ctx, queue)
 			if err != nil {
 				log.Printf("claim error: %v", err)
@@ -130,6 +165,14 @@ func main() {
 			if !ok {
 				continue
 			}
+
+			writeSchedulerStatus(statusPath, SchedulerStatus{
+				Queue:        queue,
+				Nodes:        nodes,
+				LastUpdated:  time.Now().UTC(),
+				ActiveRuns:   1,
+				PendingClaim: false,
+			})
 
 			// 🔥 Day 3: GPU-aware fit check before dispatch
 			gpuNeeded := j.Spec.GPUCount

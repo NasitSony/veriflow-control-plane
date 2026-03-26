@@ -154,6 +154,31 @@ func main() {
 		})
 	})
 
+	mux.HandleFunc("/v1/system/scheduler", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, 405, "method_not_allowed", "Use GET")
+			return
+		}
+
+		statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
+
+		data, err := os.ReadFile(statusPath)
+		if err != nil {
+			writeError(w, 500, "status_read_error", err.Error())
+			return
+		}
+
+		var status map[string]any
+		if err := json.Unmarshal(data, &status); err != nil {
+			writeError(w, 500, "status_parse_error", err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"scheduler": status,
+		})
+	})
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           logMiddleware(mux),
