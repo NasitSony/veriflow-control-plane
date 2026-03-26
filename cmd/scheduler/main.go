@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,7 +63,8 @@ func main() {
 	}
 
 	dsn := envOr("DATABASE_URL", "postgres://veriflow:veriflow@localhost:5436/veriflow?sslmode=disable")
-	queue := envOr("QUEUE", "default")
+	queues := parseQueues(envOr("QUEUES", "default"))
+	queueIdx := 0
 	interval := envOrDuration("SCHED_INTERVAL", 700*time.Millisecond)
 
 	statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
@@ -131,7 +133,7 @@ func main() {
 	}
 
 	writeSchedulerStatus(statusPath, SchedulerStatus{
-		Queue:       queue,
+		Queue:       strings.Join(queues, ","),
 		Nodes:       nodes,
 		LastUpdated: time.Now().UTC(),
 		ActiveRuns:  0,
@@ -140,7 +142,7 @@ func main() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("scheduler started queue=%s interval=%s", queue, interval)
+	log.Printf("scheduler started queues=%v interval=%s", queues, interval)
 
 	for {
 		select {
@@ -302,4 +304,31 @@ func envOrDuration(k string, def time.Duration) time.Duration {
 		}
 	}
 	return def
+}
+
+func parseQueues(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		q := strings.TrimSpace(p)
+		if q != "" {
+			out = append(out, q)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"default"}
+	}
+	return out
+}
+
+func nextQueueOrder(queues []string, start int) []string {
+	if len(queues) == 0 {
+		return []string{"default"}
+	}
+	out := make([]string, 0, len(queues))
+	for i := 0; i < len(queues); i++ {
+		idx := (start + i) % len(queues)
+		out = append(out, queues[idx])
+	}
+	return out
 }
