@@ -156,14 +156,36 @@ func main() {
 
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 
+			command := j.Spec.Command
+			if j.Spec.JobType == "training" && len(command) == 0 {
+				command = []string{
+					"/bin/sh",
+					"-c",
+					"echo starting training job; " +
+						"echo epoch=1 loss=0.84; sleep 2; " +
+						"echo epoch=2 loss=0.61; sleep 2; " +
+						"echo checkpoint saved path=/artifacts/ckpt-2; sleep 2; " +
+						"echo epoch=3 loss=0.43; sleep 2; " +
+						"echo training complete",
+				}
+			}
+
+			log.Printf(
+				"dispatching %s workload job_id=%s run_id=%s image=%s",
+				j.Spec.JobType,
+				j.JobID,
+				run.RunID,
+				j.Spec.Image,
+			)
+
 			err = k8s.CreateJob(
 				k8sClient,
 				"default",
 				jobName,
 				j.Spec.Image,
-				j.Spec.Command,
-				j.JobID.String(),   // ✅ add this
-				run.RunID.String(), // ✅ add this
+				command,
+				j.JobID.String(),
+				run.RunID.String(),
 			)
 
 			if err := store.MarkRunDispatched(ctx, run.RunID, jobName); err != nil {
