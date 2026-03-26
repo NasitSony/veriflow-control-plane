@@ -158,25 +158,48 @@ func main() {
 
 			command := j.Spec.Command
 			if j.Spec.JobType == "training" && len(command) == 0 {
+				//resumeMsg := "echo no checkpoint provided; "
+				//if j.Spec.CheckpointURI != "" {
+				//resumeMsg = fmt.Sprintf("echo resuming from checkpoint=%s; ", j.Spec.CheckpointURI)
+				//}
+
+				//artifactMsg := "echo no artifact output configured; "
+				//if j.Spec.ArtifactURI != "" {
+				//artifactMsg = fmt.Sprintf("echo writing artifact to=%s; ", j.Spec.ArtifactURI)
+				//}
+
 				command = []string{
 					"/bin/sh",
 					"-c",
 					"echo starting training job; " +
+						"if [ -n \"$CHECKPOINT_URI\" ]; then echo resuming from checkpoint=$CHECKPOINT_URI; else echo no checkpoint provided; fi; " +
+						"echo dataset=$DATASET_URI; " +
 						"echo epoch=1 loss=0.84; sleep 2; " +
 						"echo epoch=2 loss=0.61; sleep 2; " +
 						"echo checkpoint saved path=/artifacts/ckpt-2; sleep 2; " +
+						"if [ -n \"$ARTIFACT_URI\" ]; then echo writing artifact to=$ARTIFACT_URI; else echo no artifact output configured; fi; " +
 						"echo epoch=3 loss=0.43; sleep 2; " +
 						"echo training complete",
 				}
 			}
 
 			log.Printf(
-				"dispatching %s workload job_id=%s run_id=%s image=%s",
+				"dispatching %s workload job_id=%s run_id=%s gpu=%d dataset=%s checkpoint=%s artifact=%s",
 				j.Spec.JobType,
 				j.JobID,
 				run.RunID,
-				j.Spec.Image,
+				j.Spec.GPUCount,
+				j.Spec.DatasetURI,
+				j.Spec.CheckpointURI,
+				j.Spec.ArtifactURI,
 			)
+
+			env := map[string]string{
+				"JOB_TYPE":       j.Spec.JobType,
+				"DATASET_URI":    j.Spec.DatasetURI,
+				"CHECKPOINT_URI": j.Spec.CheckpointURI,
+				"ARTIFACT_URI":   j.Spec.ArtifactURI,
+			}
 
 			err = k8s.CreateJob(
 				k8sClient,
@@ -184,6 +207,7 @@ func main() {
 				jobName,
 				j.Spec.Image,
 				command,
+				env,
 				j.JobID.String(),
 				run.RunID.String(),
 			)

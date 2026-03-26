@@ -10,7 +10,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func CreateJob(client *kubernetes.Clientset, namespace string, jobName string, image string, command []string, jobID, runID string) error {
+func CreateJob(client *kubernetes.Clientset, namespace string, jobName string, image string, command []string, env map[string]string, jobID, runID string) error {
+
+	envVars := make([]corev1.EnvVar, 0, len(env)+2)
+	envVars = append(envVars,
+		corev1.EnvVar{Name: "JOB_ID", Value: jobID},
+		corev1.EnvVar{Name: "RUN_ID", Value: runID},
+	)
+
+	for k, v := range env {
+		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
+	}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -30,6 +40,7 @@ func CreateJob(client *kubernetes.Clientset, namespace string, jobName string, i
 							Name:    "runner",
 							Image:   image,
 							Command: command,
+							Env:     envVars,
 						},
 					},
 				},
