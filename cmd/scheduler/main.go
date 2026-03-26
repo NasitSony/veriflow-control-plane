@@ -184,6 +184,14 @@ func main() {
 					run.RunID,
 					gpuNeeded,
 				)
+
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_DEFERRED", map[string]any{
+					"reason":     "insufficient_gpu_capacity",
+					"gpu_needed": gpuNeeded,
+					"job_type":   j.Spec.JobType,
+					"queue":      j.Spec.Queue,
+				})
+
 				continue
 			}
 
@@ -196,6 +204,16 @@ func main() {
 				node.FreeGPUs(),
 				j.Spec.JobType,
 			)
+
+			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_SELECTED", map[string]any{
+				"node":       node.Name,
+				"gpu_needed": gpuNeeded,
+				"free_gpu":   node.FreeGPUs(),
+				"job_type":   j.Spec.JobType,
+				"queue":      j.Spec.Queue,
+				"checkpoint": j.Spec.CheckpointURI,
+				"artifact":   j.Spec.ArtifactURI,
+			})
 
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 
@@ -234,6 +252,12 @@ func main() {
 				"CHECKPOINT_URI": j.Spec.CheckpointURI,
 				"ARTIFACT_URI":   j.Spec.ArtifactURI,
 			}
+
+			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "DISPATCH_REQUESTED", map[string]any{
+				"k8s_job_name": jobName,
+				"image":        j.Spec.Image,
+				"job_type":     j.Spec.JobType,
+			})
 
 			err = k8s.CreateJob(
 				k8sClient,

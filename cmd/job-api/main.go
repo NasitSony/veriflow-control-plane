@@ -163,6 +163,14 @@ func main() {
 		statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
 
 		data, err := os.ReadFile(statusPath)
+
+		if err != nil {
+			writeJSON(w, 200, map[string]any{
+				"scheduler": "not_available",
+			})
+			return
+		}
+
 		if err != nil {
 			writeError(w, 500, "status_read_error", err.Error())
 			return

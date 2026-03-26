@@ -360,3 +360,24 @@ func (s *Store) ListEventsForJob(ctx context.Context, jobID uuid.UUID, limit int
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) AddJobEvent(ctx context.Context, jobID uuid.UUID, runID *uuid.UUID, eventType string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	if runID != nil {
+		_, err = s.pool.Exec(ctx, `
+			insert into events(job_id, run_id, type, payload)
+			values ($1,$2,$3,$4::jsonb)
+		`, jobID, *runID, eventType, string(data))
+		return err
+	}
+
+	_, err = s.pool.Exec(ctx, `
+		insert into events(job_id, type, payload)
+		values ($1,$2,$3::jsonb)
+	`, jobID, eventType, string(data))
+	return err
+}
