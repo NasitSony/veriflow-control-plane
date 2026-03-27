@@ -525,3 +525,46 @@ func (s *Store) ListTimedOutRuns(ctx context.Context) ([]struct {
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) ListHeartbeatStaleRuns(ctx context.Context, staleAfter time.Duration) ([]struct {
+	RunID       uuid.UUID
+	JobID       uuid.UUID
+	HeartbeatAt *time.Time
+	State       RunState
+}, error) {
+	rows, err := s.pool.Query(ctx, `
+		select run_id, job_id, heartbeat_at, state
+		from runs
+		where state in ('RUNNING')
+		  and heartbeat_at is not null
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]struct {
+		RunID       uuid.UUID
+		JobID       uuid.UUID
+		HeartbeatAt *time.Time
+		State       RunState
+	}, 0)
+
+	cutoff := time.Now().Add(-staleAfter)
+
+	for rows.Next() {
+		var r struct {
+			RunID       uuid.UUID
+			JobID       uuid.UUID
+			HeartbeatAt *time.Time
+			State       RunState
+		}
+		if err := rows.Scan(&r.RunID, &r.JobID, &r.HeartbeatAt, &r.State); err != nil {
+			return nil, err
+		}
+		if r.HeartbeatAt != nil && r.HeartbeatAt.Before(cutoff) {
+			out = append(out, r)
+		}
+	}
+	return out, rows.Err()
+}

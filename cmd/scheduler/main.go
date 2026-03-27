@@ -68,6 +68,8 @@ func main() {
 	queueIdx := 0
 	interval := envOrDuration("SCHED_INTERVAL", 700*time.Millisecond)
 
+	heartbeatStaleAfter := envOrDuration("HEARTBEAT_STALE_AFTER", 15*time.Second)
+
 	statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -110,9 +112,15 @@ func main() {
 						}
 					}
 				}
+
+				staleRuns, err := store.ListHeartbeatStaleRuns(ctx, heartbeatStaleAfter)
 				if err != nil {
-					log.Printf("reconcile list runs error: %v", err)
-					continue
+					log.Printf("list heartbeat stale runs error: %v", err)
+				}
+
+				staleRunMap := map[uuid.UUID]struct{}{}
+				for _, sr := range staleRuns {
+					staleRunMap[sr.RunID] = struct{}{}
 				}
 
 				for _, r := range runs {
@@ -128,6 +136,19 @@ func main() {
 
 						_ = store.MarkRunFailedOnly(ctx, r.RunID, "job_timeout")
 						_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "job_timeout")
+
+						continue
+					}
+
+					if _, ok := staleRunMap[r.RunID]; ok {
+						log.Printf("heartbeat stale job_id=%s run_id=%s stale_after=%s", r.JobID, r.RunID, heartbeatStaleAfter)
+
+						_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "HEARTBEAT_MISSED", map[string]any{
+							"stale_after_seconds": int(heartbeatStaleAfter.Seconds()),
+						})
+
+						_ = store.MarkRunFailedOnly(ctx, r.RunID, "heartbeat_stale")
+						_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "heartbeat_stale")
 
 						continue
 					}
