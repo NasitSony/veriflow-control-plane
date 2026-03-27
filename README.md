@@ -5,7 +5,7 @@ Veriflow is a Kubernetes-based AI workload orchestrator that implements a contro
 
 It accepts jobs via an HTTP API, persists control-plane state in Postgres, schedules workloads using queue and priority semantics, dispatches execution as Kubernetes Jobs, and reconciles runtime state back into an auditable lifecycle timeline.
 
-The system focuses on the infrastructure layer behind AI workloads — scheduling, reliability, and observability — rather than model logic itself.
+The system focuses on the infrastructure layer behind AI workloads — scheduling, reliability, and observability — treating AI systems as distributed systems rather than simple APIs.
 
 This project demonstrates how AI workloads can be treated as distributed systems problems, where correctness, scheduling, and failure handling are first-class concerns.
 
@@ -24,8 +24,6 @@ This project demonstrates how AI workloads can be treated as distributed systems
 ## 🚀 One-Command Demo
 
 This runs a full end-to-end workflow locally:
-
-Run a full end-to-end demo:
 
 ```bash
 ./scripts/demo.sh
@@ -219,6 +217,8 @@ See [RUNBOOK.md](RUNBOOK.md) for full operational steps.
 - Event-driven system observability  
 - AI infrastructure patterns (training-style job orchestration)  
 
+
+This project reflects how modern AI systems are built as reliable distributed infrastructure rather than isolated model pipelines.
 
 ---
 
