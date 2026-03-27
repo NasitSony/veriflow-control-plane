@@ -14,7 +14,16 @@ func (s *Store) MarkRunDispatched(ctx context.Context, runID uuid.UUID, k8sJobNa
 		set state='STARTING', k8s_job_name=$2
 		where run_id=$1
 	`, runID, k8sJobName)
-	return err
+	if err != nil {
+		return err
+	}
+
+	_, _ = s.pool.Exec(ctx, `
+		insert into events(run_id, type, payload)
+		values ($1,'POD_CREATED', jsonb_build_object('k8sJobName', $2))
+	`, runID, k8sJobName)
+
+	return nil
 }
 
 func (s *Store) MarkRunRunning(ctx context.Context, jobID, runID uuid.UUID) error {
@@ -36,7 +45,7 @@ func (s *Store) MarkRunRunning(ctx context.Context, jobID, runID uuid.UUID) erro
 	}
 	_, _ = s.pool.Exec(ctx, `
 		insert into events(job_id, run_id, type, payload)
-		values ($1,$2,'RUN_RUNNING','{}'::jsonb)
+		values ($1,$2,'POD_RUNNING','{}'::jsonb)
 	`, jobID, runID)
 	return nil
 }
@@ -60,7 +69,7 @@ func (s *Store) MarkRunSucceeded(ctx context.Context, jobID, runID uuid.UUID) er
 	}
 	_, _ = s.pool.Exec(ctx, `
 		insert into events(job_id, run_id, type, payload)
-		values ($1,$2,'RUN_SUCCEEDED','{}'::jsonb)
+		values ($1,$2,'JOB_SUCCEEDED','{}'::jsonb)
 	`, jobID, runID)
 	return nil
 }
@@ -89,7 +98,7 @@ func (s *Store) MarkRunFailed(ctx context.Context, jobID, runID uuid.UUID, reaso
 
 	_, _ = s.pool.Exec(ctx, `
 		insert into events(job_id, run_id, type, payload)
-		values ($1,$2,'RUN_FAILED',$3::jsonb)
+		values ($1,$2,'JOB_FAILED',$3::jsonb)
 	`, jobID, runID, string(payload))
 	return nil
 }

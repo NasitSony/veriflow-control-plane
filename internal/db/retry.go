@@ -28,7 +28,7 @@ func min(a, b int) int {
 
 // ScheduleRetryOrFail decides whether to retry.
 // max_retries means "extra tries after attempt=1".
-func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID) error {
+func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID, reason string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -63,9 +63,18 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID)
 
 		// event
 		_, _ = tx.Exec(ctx, `
-			insert into events(job_id, run_id, type, payload)
-			values ($1,$2,'JOB_RETRY_SCHEDULED', jsonb_build_object('next_run_at',$3,'delay_seconds',$4,'attempt',$5))
-		`, jobID, runID, next, int(delay.Seconds()), attempt)
+		insert into events(job_id, run_id, type, payload)
+		values ($1,$2,'RETRY_TRIGGERED',
+			jsonb_build_object(
+				'next_run_at',$3,
+				'delay_seconds',$4,
+				'attempt',$5,
+				'job_state','PENDING',
+				'run_state','FAILED',
+				'reason',$6
+			)
+		)
+	`, jobID, runID, next, int(delay.Seconds()), attempt, reason)
 
 		return tx.Commit(ctx)
 	}
@@ -77,9 +86,16 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID)
 	}
 
 	_, _ = tx.Exec(ctx, `
-		insert into events(job_id, run_id, type, payload)
-		values ($1,$2,'JOB_FAILED_FINAL', '{}'::jsonb)
-	`, jobID, runID)
+	insert into events(job_id, run_id, type, payload)
+	values ($1,$2,'JOB_FAILED',
+		jsonb_build_object(
+			'final', true,
+			'attempt', $3,
+			'max_retries', $4,
+			'reason', $5
+		)
+	)
+    `, jobID, runID, attempt, maxRetries, reason)
 
 	return tx.Commit(ctx)
 }

@@ -80,6 +80,27 @@ func main() {
 			return
 		}
 
+		// 🔥 ADD THIS BLOCK
+		if spec.JobType == "training" && spec.DatasetURI == "" {
+			writeError(w, 400, "invalid_spec", "datasetUri required for training jobs")
+			return
+		}
+
+		if spec.GPUCount < 0 {
+			writeError(w, 400, "invalid_spec", "gpuCount must be >= 0")
+			return
+		}
+
+		log.Printf(
+			"submit job request: type=%s gpu=%d dataset=%s artifact=%s priority=%d image=%s",
+			spec.JobType,
+			spec.GPUCount,
+			spec.DatasetURI,
+			spec.ArtifactURI,
+			spec.Priority,
+			spec.Image,
+		)
+
 		job, replay, err := store.CreateJobIdempotent(r.Context(), idemKey, spec)
 		if err != nil {
 			writeError(w, 400, "create_failed", err.Error())
@@ -113,7 +134,81 @@ func main() {
 			writeError(w, 500, "db_error", err.Error())
 			return
 		}
-		writeJSON(w, 200, map[string]any{"job": job})
+
+		runs, err := store.ListRunsForJob(r.Context(), id)
+		if err != nil {
+			writeError(w, 500, "runs_error", err.Error())
+			return
+		}
+
+		events, err := store.ListEventsForJob(r.Context(), id, 50)
+		if err != nil {
+			writeError(w, 500, "events_error", err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"job":    job,
+			"runs":   runs,
+			"events": events,
+		})
+	})
+
+	mux.HandleFunc("/v1/system/scheduler", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, 405, "method_not_allowed", "Use GET")
+			return
+		}
+
+		statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
+
+		data, err := os.ReadFile(statusPath)
+
+		if err != nil {
+			writeJSON(w, 200, map[string]any{
+				"scheduler": "not_available",
+			})
+			return
+		}
+
+		if err != nil {
+			writeError(w, 500, "status_read_error", err.Error())
+			return
+		}
+
+		var status map[string]any
+		if err := json.Unmarshal(data, &status); err != nil {
+			writeError(w, 500, "status_parse_error", err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"scheduler": status,
+		})
+	})
+
+	mux.HandleFunc("/v1/system/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, 405, "method_not_allowed", "Use GET")
+			return
+		}
+
+		summary, err := store.GetSystemSummary(r.Context())
+		if err != nil {
+			writeError(w, 500, "summary_error", err.Error())
+			return
+		}
+
+		events, err := store.ListRecentEvents(r.Context(), 20)
+		if err != nil {
+			writeError(w, 500, "recent_events_error", err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"summary":      summary,
+			"recentEvents": events,
+		})
 	})
 
 	srv := &http.Server{
