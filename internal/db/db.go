@@ -49,21 +49,22 @@ type JobSpec struct {
 }
 
 type Job struct {
-	JobID      uuid.UUID `json:"job_id"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	State      JobState  `json:"state"`
-	Spec       JobSpec   `json:"spec"`
-	Queue      string    `json:"queue"`
-	Priority   int       `json:"priority"`
-	MaxRetries int       `json:"max_retries"`
+	JobID      uuid.UUID  `json:"job_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	State      JobState   `json:"state"`
+	Spec       JobSpec    `json:"spec"`
+	Queue      string     `json:"queue"`
+	Priority   int        `json:"priority"`
+	MaxRetries int        `json:"max_retries"`
+	NextRunAt  *time.Time `json:"nextRunAt,omitempty"`
 }
 
 type Run struct {
 	RunID       uuid.UUID
 	JobID       uuid.UUID
 	Attempt     int
-	State       string
+	State       RunState
 	K8sJobName  string
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
@@ -183,26 +184,6 @@ func (s *Store) CreateJobIdempotent(ctx context.Context, idemKey string, spec Jo
 		return Job{}, false, err
 	}
 	return j, false, nil
-}
-
-func (s *Store) GetJob(ctx context.Context, id uuid.UUID) (Job, error) {
-	row := s.pool.QueryRow(ctx, `
-		select job_id, created_at, updated_at, state, spec, queue, priority, max_retries
-		from jobs where job_id=$1
-	`, id)
-
-	var j Job
-	var specJSON []byte
-	if err := row.Scan(&j.JobID, &j.CreatedAt, &j.UpdatedAt, &j.State, &specJSON, &j.Queue, &j.Priority, &j.MaxRetries); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Job{}, ErrNotFound
-		}
-		return Job{}, err
-	}
-	if err := json.Unmarshal(specJSON, &j.Spec); err != nil {
-		return Job{}, err
-	}
-	return j, nil
 }
 
 // ClaimNextPendingJob:

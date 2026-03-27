@@ -228,7 +228,6 @@ func main() {
 				j   db.Job
 				run db.Run
 				ok  bool
-				err error
 			)
 
 			queueOrder := nextQueueOrder(queues, queueIdx)
