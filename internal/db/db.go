@@ -326,10 +326,10 @@ func (s *Store) ListRunsForJob(ctx context.Context, jobID uuid.UUID) ([]Run, err
 
 func (s *Store) ListEventsForJob(ctx context.Context, jobID uuid.UUID, limit int) ([]Event, error) {
 	rows, err := s.pool.Query(ctx, `
-		select job_id, run_id, type, payload, created_at
+		select job_id, run_id, type, payload, ts
 		from events
 		where job_id=$1
-		order by created_at asc
+		order by ts asc
 		limit $2
 	`, jobID, limit)
 	if err != nil {
@@ -404,9 +404,9 @@ func (s *Store) GetSystemSummary(ctx context.Context) (SystemSummary, error) {
 
 func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]Event, error) {
 	rows, err := s.pool.Query(ctx, `
-		select job_id, run_id, type, payload, created_at
+		select job_id, run_id, type, payload, ts
 		from events
-		order by created_at desc
+		order by ts desc
 		limit $1
 	`, limit)
 	if err != nil {
@@ -442,7 +442,7 @@ func (s *Store) GetActiveGPUUsageByNode(ctx context.Context) (map[string]int, er
 			from events
 			where run_id = r.run_id
 			  and type = 'PLACEMENT_SELECTED'
-			order by created_at desc
+			order by ts desc
 			limit 1
 		) e on true
 		where r.state in ('CREATED','STARTING','RUNNING')
