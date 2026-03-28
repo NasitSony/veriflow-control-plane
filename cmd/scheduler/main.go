@@ -302,20 +302,46 @@ func main() {
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 
 			command := j.Spec.Command
-			if j.Spec.JobType == "training" && len(command) == 0 {
 
+			if j.Spec.JobType == "training" && len(command) == 0 {
 				command = []string{
 					"/bin/sh",
 					"-c",
 					"echo starting training job; " +
 						"if [ -n \"$CHECKPOINT_URI\" ]; then echo resuming from checkpoint=$CHECKPOINT_URI; else echo no checkpoint provided; fi; " +
 						"echo dataset=$DATASET_URI; " +
-						"echo epoch=1 loss=0.84; sleep 2; " +
-						"echo epoch=2 loss=0.61; sleep 2; " +
+						"echo epoch=1 loss=0.84 accuracy=0.71; sleep 2; " +
+						"echo epoch=2 loss=0.61 accuracy=0.79; sleep 2; " +
 						"echo checkpoint saved path=/artifacts/ckpt-2; sleep 2; " +
 						"if [ -n \"$ARTIFACT_URI\" ]; then echo writing artifact to=$ARTIFACT_URI; else echo no artifact output configured; fi; " +
-						"echo epoch=3 loss=0.43; sleep 2; " +
+						"echo epoch=3 loss=0.43 accuracy=0.86; sleep 2; " +
 						"echo training complete",
+				}
+			}
+
+			if j.Spec.JobType == "batch-inference" && len(command) == 0 {
+				command = []string{
+					"/bin/sh",
+					"-c",
+					"echo starting batch inference job; " +
+						"echo dataset=$DATASET_URI; " +
+						"echo loading model artifact=$ARTIFACT_URI; sleep 2; " +
+						"echo processed_batch=1 latency_ms=120; sleep 1; " +
+						"echo processed_batch=2 latency_ms=110; sleep 1; " +
+						"echo processed_batch=3 latency_ms=115; sleep 1; " +
+						"echo batch inference complete",
+				}
+			}
+
+			if j.Spec.JobType == "evaluation" && len(command) == 0 {
+				command = []string{
+					"/bin/sh",
+					"-c",
+					"echo starting evaluation job; " +
+						"echo dataset=$DATASET_URI; sleep 2; " +
+						"echo validation_loss=0.52 accuracy=0.82; sleep 2; " +
+						"echo validation_loss=0.47 accuracy=0.85; sleep 2; " +
+						"echo evaluation complete",
 				}
 			}
 
@@ -342,6 +368,30 @@ func main() {
 				"image":        j.Spec.Image,
 				"job_type":     j.Spec.JobType,
 			})
+
+			if j.Spec.JobType == "training" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "TRAINING_STARTED", map[string]any{
+					"dataset":    j.Spec.DatasetURI,
+					"gpu_count":  j.Spec.GPUCount,
+					"checkpoint": j.Spec.CheckpointURI,
+					"artifact":   j.Spec.ArtifactURI,
+				})
+			}
+
+			if j.Spec.JobType == "batch-inference" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "INFERENCE_STARTED", map[string]any{
+					"dataset":   j.Spec.DatasetURI,
+					"gpu_count": j.Spec.GPUCount,
+					"artifact":  j.Spec.ArtifactURI,
+				})
+			}
+
+			if j.Spec.JobType == "evaluation" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "EVALUATION_STARTED", map[string]any{
+					"dataset":   j.Spec.DatasetURI,
+					"gpu_count": j.Spec.GPUCount,
+				})
+			}
 
 			alreadyDispatched, existingJobName, err := store.RunAlreadyDispatched(ctx, run.RunID)
 			if err != nil {
