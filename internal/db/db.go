@@ -49,15 +49,16 @@ type JobSpec struct {
 }
 
 type Job struct {
-	JobID      uuid.UUID  `json:"job_id"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	State      JobState   `json:"state"`
-	Spec       JobSpec    `json:"spec"`
-	Queue      string     `json:"queue"`
-	Priority   int        `json:"priority"`
-	MaxRetries int        `json:"max_retries"`
-	NextRunAt  *time.Time `json:"nextRunAt,omitempty"`
+	JobID               uuid.UUID  `json:"job_id"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	State               JobState   `json:"state"`
+	Spec                JobSpec    `json:"spec"`
+	Queue               string     `json:"queue"`
+	Priority            int        `json:"priority"`
+	MaxRetries          int        `json:"max_retries"`
+	NextRunAt           *time.Time `json:"nextRunAt,omitempty"`
+	LatestCheckpointURI string     `json:"latestCheckpointUri"`
 }
 
 type Run struct {
@@ -564,4 +565,13 @@ func (s *Store) RunAlreadyDispatched(ctx context.Context, runID uuid.UUID) (bool
 		return true, *k8sJobName, nil
 	}
 	return false, "", nil
+}
+func (s *Store) UpdateLatestCheckpointURI(ctx context.Context, jobID uuid.UUID, checkpointURI string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE jobs
+		SET latest_checkpoint_uri = $2,
+		    updated_at = now()
+		WHERE job_id = $1
+	`, jobID, checkpointURI)
+	return err
 }

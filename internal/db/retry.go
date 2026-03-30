@@ -46,17 +46,36 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 		return err
 	}
 
+	var latestCheckpointURI string
+	if err := tx.QueryRow(ctx, `
+		select coalesce(latest_checkpoint_uri, '')
+		from jobs
+		where job_id=$1
+	`, jobID).Scan(&latestCheckpointURI); err != nil {
+		return err
+	}
+
 	// total allowed attempts = 1 + max_retries
 	if attempt < 1+maxRetries {
 		delay := backoffForAttempt(attempt) // based on current failed attempt
 		next := time.Now().UTC().Add(delay)
 
 		// job back to pending with a delay
-		_, err = tx.Exec(ctx, `
-			update jobs
-			set state='PENDING', next_run_at=$2
-			where job_id=$1
-		`, jobID, next)
+		if latestCheckpointURI != "" {
+			_, err = tx.Exec(ctx, `
+				update jobs
+				set state='PENDING',
+				    next_run_at=$2,
+				    spec = jsonb_set(spec, '{checkpointUri}', to_jsonb($3::text), true)
+				where job_id=$1
+			`, jobID, next, latestCheckpointURI)
+		} else {
+			_, err = tx.Exec(ctx, `
+				update jobs
+				set state='PENDING', next_run_at=$2
+				where job_id=$1
+			`, jobID, next)
+		}
 		if err != nil {
 			return err
 		}
@@ -71,10 +90,11 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 				'attempt',$5,
 				'job_state','PENDING',
 				'run_state','FAILED',
-				'reason',$6
+				'reason',$6,
+				'checkpoint_uri',$7
 			)
 		)
-	`, jobID, runID, next, int(delay.Seconds()), attempt, reason)
+	`, jobID, runID, next, int(delay.Seconds()), attempt, reason, latestCheckpointURI)
 
 		return tx.Commit(ctx)
 	}
