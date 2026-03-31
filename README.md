@@ -97,6 +97,7 @@ Veriflow maintains stable control-plane behavior under burst submission.
   - ```CHECKPOINT_SAVED```
 - Failures detected via container exit codes
 - Events show consistent failure propagation:
+- 
 ``` RUN_FAILED → (retry OR terminal failure) ```
 
 ## 🚀 One-Command Demo
