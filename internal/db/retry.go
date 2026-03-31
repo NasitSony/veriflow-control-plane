@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,6 +56,9 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 		return err
 	}
 
+	log.Printf("schedule retry job_id=%s run_id=%s attempt=%d max_retries=%d checkpoint=%q reason=%s",
+		jobID, runID, attempt, maxRetries, latestCheckpointURI, reason)
+
 	// total allowed attempts = 1 + max_retries
 	if attempt < 1+maxRetries {
 		delay := backoffForAttempt(attempt) // based on current failed attempt
@@ -81,21 +85,26 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 		}
 
 		// event
-		_, _ = tx.Exec(ctx, `
-		insert into events(job_id, run_id, type, payload)
-		values ($1,$2,'RETRY_TRIGGERED',
-			jsonb_build_object(
-				'next_run_at',$3,
-				'delay_seconds',$4,
-				'attempt',$5,
-				'job_state','PENDING',
-				'run_state','FAILED',
-				'reason',$6,
-				'checkpoint_uri',$7
-			)
+		_, err = tx.Exec(ctx, `
+	insert into events(job_id, run_id, type, payload)
+	values ($1,$2,'RETRY_TRIGGERED',
+		jsonb_build_object(
+			'next_run_at', to_jsonb($3::timestamptz),
+			'delay_seconds', to_jsonb($4::int),
+			'attempt', to_jsonb($5::int),
+			'job_state', 'PENDING',
+			'run_state', 'FAILED',
+			'reason', to_jsonb($6::text),
+			'checkpoint_uri', to_jsonb($7::text)
 		)
-	`, jobID, runID, next, int(delay.Seconds()), attempt, reason, latestCheckpointURI)
+	)
+`, jobID, runID, next, int(delay.Seconds()), attempt, reason, latestCheckpointURI)
+		if err != nil {
+			return fmt.Errorf("insert RETRY_TRIGGERED event: %w", err)
+		}
 
+		log.Printf("retry queued job_id=%s run_id=%s next_run_at=%s checkpoint=%q",
+			jobID, runID, next.Format(time.RFC3339), latestCheckpointURI)
 		return tx.Commit(ctx)
 	}
 
@@ -105,7 +114,7 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 		return err
 	}
 
-	_, _ = tx.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 	insert into events(job_id, run_id, type, payload)
 	values ($1,$2,'JOB_FAILED',
 		jsonb_build_object(
@@ -115,7 +124,10 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 			'reason', $5
 		)
 	)
-    `, jobID, runID, attempt, maxRetries, reason)
+`, jobID, runID, attempt, maxRetries, reason)
+	if err != nil {
+		return fmt.Errorf("insert JOB_FAILED event: %w", err)
+	}
 
 	return tx.Commit(ctx)
 }

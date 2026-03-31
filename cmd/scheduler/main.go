@@ -219,6 +219,14 @@ func main() {
 											"step":            curr.Step,
 											"updated_at":      rs.UpdatedAt,
 										})
+
+										if err := store.UpdateLatestCheckpointURI(ctx, r.JobID, curr.CheckpointPath); err != nil {
+											log.Printf("checkpoint update failed job_id=%s run_id=%s err=%v",
+												r.JobID, r.RunID, err)
+										} else {
+											log.Printf("checkpoint updated job_id=%s run_id=%s path=%s",
+												r.JobID, r.RunID, curr.CheckpointPath)
+										}
 									}
 
 									if curr.ArtifactPath != "" &&
@@ -366,15 +374,23 @@ func main() {
 					if podFailed {
 						delete(lastSeenStatus, r.RunID)
 
-						// avoid double-failing an already failed run
-						if r.State != "FAILED" {
-							_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RUN_FAILED", map[string]any{
-								"reason": podFailReason,
-							})
+						log.Printf("run failed job_id=%s run_id=%s reason=%s", r.JobID, r.RunID, podFailReason)
 
-							_ = store.MarkRunFailedOnly(ctx, r.RunID, podFailReason)
-							_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, podFailReason)
+						_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RUN_FAILED", map[string]any{
+							"reason": podFailReason,
+						})
+
+						if err := store.MarkRunFailedOnly(ctx, r.RunID, podFailReason); err != nil {
+							log.Printf("mark run failed error job_id=%s run_id=%s err=%v", r.JobID, r.RunID, err)
 						}
+
+						log.Printf("triggering retry job_id=%s run_id=%s", r.JobID, r.RunID)
+						if err := store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, podFailReason); err != nil {
+							log.Printf("retry scheduling failed job_id=%s run_id=%s err=%v", r.JobID, r.RunID, err)
+						} else {
+							log.Printf("retry scheduling succeeded job_id=%s run_id=%s", r.JobID, r.RunID)
+						}
+
 						continue
 					}
 
