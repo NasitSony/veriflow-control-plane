@@ -100,6 +100,29 @@ Veriflow maintains stable control-plane behavior under burst submission.
  
 ``` RUN_FAILED → (retry OR terminal failure) ```
 
+
+### 3. Checkpoint-Aware Retry & Resume
+
+For retry-enabled jobs:
+
+- checkpoint persisted:
+
+``` latest_checkpoint_uri = /artifacts/ckpt-2```
+
+- retry scheduled:
+
+``` RETRY_TRIGGERED```
+
+- resumed execution:
+
+``` TRAINING_RESUMED```
+
+- final success:
+
+``` JOB_SUCCEEDED```
+
+Veriflow resumes failed training runs from the latest checkpoint instead of restarting from scratch.
+
 ## 🚀 One-Command Demo
 
 This runs a full end-to-end workflow locally:
