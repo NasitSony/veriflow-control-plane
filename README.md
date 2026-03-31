@@ -19,7 +19,7 @@ Veriflow models:
 
 ## ⚡ Key Features
 
-- Idempotent job submission (```text Idempotency-Key ```)
+- Idempotent job submission (``` Idempotency-Key ```)
 - Concurrency-safe job claiming (```text FOR UPDATE SKIP LOCKED ```)
 - Queue + priority-based scheduling
 - GPU-aware placement decisions
