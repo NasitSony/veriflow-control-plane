@@ -107,19 +107,19 @@ For retry-enabled jobs:
 
 - checkpoint persisted:
 
-``` latest_checkpoint_uri = /artifacts/ckpt-2```
+  ``` latest_checkpoint_uri = /artifacts/ckpt-2```
 
 - retry scheduled:
 
-``` RETRY_TRIGGERED```
+  ``` RETRY_TRIGGERED```
 
 - resumed execution:
 
-``` TRAINING_RESUMED```
+ ``` TRAINING_RESUMED```
 
 - final success:
 
-``` JOB_SUCCEEDED```
+  ``` JOB_SUCCEEDED```
 
 Veriflow resumes failed training runs from the latest checkpoint instead of restarting from scratch.
 
