@@ -7,26 +7,28 @@ It treats AI workloads as **distributed systems problems** — where scheduling,
 
 ## 🧠 Core Idea
 
-Modern AI systems are not just model pipelines — they are distributed systems.
+Modern AI systems are not just model pipelines — they are **distributed systems**.
 
 Veriflow models:
 
-- job lifecycle as a state machine
-- execution as Kubernetes workloads
-- runtime signals as control-plane inputs
-- recovery as checkpoint-aware retry
+- job lifecycle as a **state machine**
+- execution as **Kubernetes workloads**
+- runtime signals as **control-plane inputs**
+- recovery as **checkpoint-aware retry**
 
 
-## Key Features
+## ⚡ Key Features
 
-- Idempotent job submission using Idempotency-Key  
-- Concurrency-safe job claiming with FOR UPDATE SKIP LOCKED  
-- Priority and queue-based scheduling  
-- GPU-aware placement decisions  
-- Retry with backoff using next_run_at  
-- Timeout handling for long-running jobs  
-- Event-sourced lifecycle tracking (jobs, runs, events)  
-- Kubernetes-based execution (batch/v1.Job)  
+- Idempotent job submission (```text Idempotency-Key ```)
+- Concurrency-safe job claiming (FOR UPDATE SKIP LOCKED)
+- Queue + priority-based scheduling
+- GPU-aware placement decisions
+- Retry with backoff (next_run_at)
+- Timeout handling for long-running jobs
+- Event-sourced lifecycle tracking (jobs, runs, events)
+- Kubernetes-based execution (batch/v1.Job)
+- **Runtime-aware reconciliation (training progress, checkpoints)**
+- **Checkpoint-aware retry and resume**
 
 ## 🚀 One-Command Demo
 
