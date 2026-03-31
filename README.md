@@ -30,6 +30,25 @@ Veriflow models:
 - **Runtime-aware reconciliation (training progress, checkpoints)**
 - **Checkpoint-aware retry and resume**
 
+## 🏗 Architecture
+
+```
+Client
+  │  POST /v1/jobs  (Idempotency-Key)
+  ▼
+job-api (Go)
+  │  writes jobs/spec to Postgres
+  ▼
+Postgres (jobs, runs, events)
+  ▲
+  │  claim (FOR UPDATE SKIP LOCKED)
+  │  create run attempt
+  │  dispatch → Kubernetes Job
+  │  reconcile runtime + K8s state
+  ▼
+scheduler (Go) ───────────► Kubernetes Job / Pod
+```
+
 ## 🚀 One-Command Demo
 
 This runs a full end-to-end workflow locally:
