@@ -119,9 +119,9 @@ func (s *Store) ScheduleRetryOrFail(ctx context.Context, jobID, runID uuid.UUID,
 	values ($1,$2,'JOB_FAILED',
 		jsonb_build_object(
 			'final', true,
-			'attempt', $3,
-			'max_retries', $4,
-			'reason', $5
+			'attempt', to_jsonb($3::int),
+			'max_retries', to_jsonb($4::int),
+			'reason', to_jsonb($5::text)
 		)
 	)
 `, jobID, runID, attempt, maxRetries, reason)
