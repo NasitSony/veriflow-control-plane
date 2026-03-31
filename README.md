@@ -81,7 +81,7 @@ JOB_SUCCEEDED
 
 ## 🧪 Evaluation
 
-## 1. Burst Submission Handling
+### 1. Burst Submission Handling
 - Submitted **20 concurrent jobs**
 - Scheduler continued:
   - claiming jobs
@@ -91,7 +91,13 @@ JOB_SUCCEEDED
 
 Veriflow maintains stable control-plane behavior under burst submission.
 
-
+### 2. Runtime-Aware Failure Handling
+- Jobs emit:
+  - ```TRAINING_PROGRESS```
+  - ```CHECKPOINT_SAVED```
+- Failures detected via container exit codes
+- Events show consistent failure propagation:
+``` RUN_FAILED → (retry OR terminal failure) ```
 
 ## 🚀 One-Command Demo
 
