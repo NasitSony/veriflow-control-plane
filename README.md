@@ -5,17 +5,17 @@ Veriflow is a Kubernetes-based AI workload orchestrator that implements a **cont
 It treats AI workloads as **distributed systems problems** — where scheduling, correctness, and failure handling are first-class concerns — rather than simple API execution.
 
 
-# 🧠 Core Idea
+## 🧠 Core Idea
 
 Modern AI systems are not just model pipelines — they are distributed systems.
 
 Veriflow models:
-``text
+
 - job lifecycle as a state machine
-execution as Kubernetes workloads
-runtime signals as control-plane inputs
-recovery as checkpoint-aware retry
-``
+- execution as Kubernetes workloads
+- runtime signals as control-plane inputs
+- recovery as checkpoint-aware retry
+
 
 ## Key Features
 
