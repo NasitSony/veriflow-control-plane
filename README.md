@@ -30,6 +30,7 @@ Veriflow models:
 - **Runtime-aware reconciliation (training progress, checkpoints)**
 - **Checkpoint-aware retry and resume**
 
+
 ## 🏗 Architecture
 
 ```
@@ -77,6 +78,20 @@ TRAINING_RESUMED
 ...
 JOB_SUCCEEDED
 ```
+
+## 🧪 Evaluation
+
+## 1. Burst Submission Handling
+- Submitted **20 concurrent jobs**
+- Scheduler continued:
+  - claiming jobs
+  - dispatching workloads
+  - emitting runtime events
+- No crashes or deadlocks observed
+
+Veriflow maintains stable control-plane behavior under burst submission.
+
+
 
 ## 🚀 One-Command Demo
 
