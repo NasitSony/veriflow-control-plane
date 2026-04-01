@@ -40,12 +40,14 @@ type JobSpec struct {
 	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
 
 	// 🔥 NEW AI FIELDS
-	JobType       string `json:"jobType,omitempty"`  // training | batch-inference
-	GPUCount      int    `json:"gpuCount,omitempty"` // number of GPUs
-	DatasetURI    string `json:"datasetUri,omitempty"`
-	CheckpointURI string `json:"checkpointUri,omitempty"`
-	ArtifactURI   string `json:"artifactUri,omitempty"`
-	Framework     string `json:"framework,omitempty"` // pytorch | custom
+	JobType        string `json:"jobType,omitempty"`  // training | batch-inference
+	GPUCount       int    `json:"gpuCount,omitempty"` // number of GPUs
+	DatasetURI     string `json:"datasetUri,omitempty"`
+	CheckpointURI  string `json:"checkpointUri,omitempty"`
+	ArtifactURI    string `json:"artifactUri,omitempty"`
+	Framework      string `json:"framework,omitempty"` // pytorch | custom
+	GPUType        string `json:"gpuType,omitempty"`
+	MinGPUMemoryMB int    `json:"minGpuMemoryMb,omitempty"`
 }
 
 type Job struct {

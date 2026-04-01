@@ -20,9 +20,11 @@ import (
 )
 
 type NodeCapacity struct {
-	Name      string `json:"name"`
-	TotalGPUs int    `json:"totalGPUs"`
-	UsedGPUs  int    `json:"usedGPUs"`
+	Name           string `json:"name"`
+	GPUType        string `json:"gpuType"`
+	TotalGPUs      int    `json:"totalGPUs"`
+	UsedGPUs       int    `json:"usedGPUs"`
+	MemoryPerGPUmb int    `json:"memoryPerGpuMb"`
 }
 
 func (n NodeCapacity) FreeGPUs() int {
@@ -72,6 +74,8 @@ func main() {
 	heartbeatStaleAfter := envOrDuration("HEARTBEAT_STALE_AFTER", 15*time.Second)
 
 	statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
+
+	schedulerID := envOr("SCHEDULER_ID", "sched-unknown")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -426,8 +430,20 @@ func main() {
 
 	// 🔥 Day 3: basic GPU inventory
 	nodes := []NodeCapacity{
-		{Name: "gpu-node-a", TotalGPUs: 2, UsedGPUs: 0},
-		{Name: "gpu-node-b", TotalGPUs: 4, UsedGPUs: 0},
+		{
+			Name:           "gpu-node-a",
+			GPUType:        "A100",
+			TotalGPUs:      4,
+			UsedGPUs:       0,
+			MemoryPerGPUmb: 40000,
+		},
+		{
+			Name:           "gpu-node-b",
+			GPUType:        "L4",
+			TotalGPUs:      2,
+			UsedGPUs:       0,
+			MemoryPerGPUmb: 24000,
+		},
 	}
 
 	writeSchedulerStatus(statusPath, SchedulerStatus{
@@ -480,7 +496,7 @@ func main() {
 					continue
 				}
 				if ok {
-					log.Printf("claimed job from queue=%s job_id=%s run_id=%s", q, j.JobID, run.RunID)
+					log.Printf("[%s] claimed job from queue=%s job_id=%s run_id=%s", schedulerID, q, j.JobID, run.RunID)
 					break
 				}
 			}
@@ -499,51 +515,76 @@ func main() {
 				PendingClaim: false,
 			})
 
-			// 🔥 Day 3: GPU-aware fit check before dispatch
 			gpuNeeded := j.Spec.GPUCount
-			node, fit := pickNodeForJob(effectiveNodes, gpuNeeded)
-			if !fit {
+
+			var selected *NodeCapacity
+			var rejectReason string
+
+			for i := range effectiveNodes {
+				fits, reason := nodeFitsGPU(effectiveNodes[i], j.Spec)
+				if fits {
+					selected = &effectiveNodes[i]
+					break
+				}
+				rejectReason = reason
+			}
+
+			if selected == nil {
 				log.Printf(
-					"insufficient GPU capacity for job_id=%s run_id=%s need_gpu=%d",
+					"placement deferred job_id=%s run_id=%s reason=%s gpu_needed=%d gpu_type=%s min_gpu_memory_mb=%d",
 					j.JobID,
 					run.RunID,
+					rejectReason,
 					gpuNeeded,
+					j.Spec.GPUType,
+					j.Spec.MinGPUMemoryMB,
 				)
 
 				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_DEFERRED", map[string]any{
-					"reason":     "insufficient_gpu_capacity",
-					"gpu_needed": gpuNeeded,
-					"job_type":   j.Spec.JobType,
-					"queue":      j.Spec.Queue,
+					"reason":            rejectReason,
+					"gpu_needed":        gpuNeeded,
+					"gpu_type":          j.Spec.GPUType,
+					"min_gpu_memory_mb": j.Spec.MinGPUMemoryMB,
+					"job_type":          j.Spec.JobType,
+					"queue":             j.Spec.Queue,
+					"checkpoint":        j.Spec.CheckpointURI,
+					"artifact":          j.Spec.ArtifactURI,
+					"scheduler_id":      schedulerID,
 				})
 
 				continue
 			}
 
 			log.Printf(
-				"selected node for job_id=%s run_id=%s node=%s need_gpu=%d free_gpu=%d job_type=%s",
+				"selected node for job_id=%s run_id=%s node=%s need_gpu=%d free_gpu=%d node_gpu_type=%s req_gpu_type=%s min_gpu_memory_mb=%d job_type=%s",
 				j.JobID,
 				run.RunID,
-				node.Name,
+				selected.Name,
 				gpuNeeded,
-				node.FreeGPUs(),
+				selected.FreeGPUs(),
+				selected.GPUType,
+				j.Spec.GPUType,
+				j.Spec.MinGPUMemoryMB,
 				j.Spec.JobType,
 			)
 
 			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_SELECTED", map[string]any{
-				"node":       node.Name,
-				"gpu_needed": gpuNeeded,
-				"free_gpu":   node.FreeGPUs(),
-				"job_type":   j.Spec.JobType,
-				"queue":      j.Spec.Queue,
-				"checkpoint": j.Spec.CheckpointURI,
-				"artifact":   j.Spec.ArtifactURI,
+				"node":               selected.Name,
+				"gpu_needed":         gpuNeeded,
+				"free_gpu":           selected.FreeGPUs(),
+				"gpu_type":           selected.GPUType,
+				"memory_per_gpu_mb":  selected.MemoryPerGPUmb,
+				"requested_gpu_type": j.Spec.GPUType,
+				"min_gpu_memory_mb":  j.Spec.MinGPUMemoryMB,
+				"job_type":           j.Spec.JobType,
+				"queue":              j.Spec.Queue,
+				"checkpoint":         j.Spec.CheckpointURI,
+				"artifact":           j.Spec.ArtifactURI,
+				"scheduler_id":       schedulerID,
 			})
 
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
-
 			command := j.Spec.Command
-
 			if j.Spec.JobType == "training" {
 				command = []string{
 					"/bin/sh",
@@ -700,6 +741,7 @@ echo "training complete"
 				"k8s_job_name": jobName,
 				"image":        j.Spec.Image,
 				"job_type":     j.Spec.JobType,
+				"scheduler_id": schedulerID,
 			})
 
 			if j.Spec.JobType == "training" && j.Spec.CheckpointURI != "" {
@@ -726,7 +768,7 @@ echo "training complete"
 
 			alreadyDispatched, existingJobName, err := store.RunAlreadyDispatched(ctx, run.RunID)
 			if err != nil {
-				log.Printf("dispatch check error job_id=%s run_id=%s err=%v", j.JobID, run.RunID, err)
+				log.Printf("[%s] Dispatch check error job_id=%s run_id=%s err=%v", schedulerID, j.JobID, run.RunID, err)
 				continue
 			}
 			if alreadyDispatched {
@@ -768,8 +810,8 @@ echo "training complete"
 
 			//_ = store.MarkRunDispatched(ctx, run.RunID, jobName)
 
-			log.Printf("DISPATCHED job_id=%s run_id=%s k8s_job=%s",
-				j.JobID, run.RunID, jobName)
+			log.Printf("[%s] DISPATCHED job_id=%s run_id=%s k8s_job=%s",
+				schedulerID, j.JobID, run.RunID, jobName)
 		}
 	}
 }
@@ -820,6 +862,19 @@ func applyGPUUsage(nodes []NodeCapacity, usage map[string]int) []NodeCapacity {
 		}
 	}
 	return out
+}
+
+func nodeFitsGPU(node NodeCapacity, spec db.JobSpec) (bool, string) {
+	if node.FreeGPUs() < spec.GPUCount {
+		return false, "insufficient_gpu_count"
+	}
+	if spec.GPUType != "" && node.GPUType != spec.GPUType {
+		return false, "gpu_type_mismatch"
+	}
+	if spec.MinGPUMemoryMB > 0 && node.MemoryPerGPUmb < spec.MinGPUMemoryMB {
+		return false, "insufficient_gpu_memory"
+	}
+	return true, ""
 }
 
 func nextQueueOrder(queues []string, start int) []string {
