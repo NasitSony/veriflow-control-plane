@@ -520,13 +520,50 @@ func main() {
 			var selected *NodeCapacity
 			var rejectReason string
 
+			bestPostFree := int(^uint(0) >> 1) // max int
+			bestMemoryHeadroom := int(^uint(0) >> 1)
+
 			for i := range effectiveNodes {
 				fits, reason := nodeFitsGPU(effectiveNodes[i], j.Spec)
-				if fits {
-					selected = &effectiveNodes[i]
-					break
+				if !fits {
+					log.Printf(
+						"node rejected job_id=%s run_id=%s node=%s reason=%s gpu_needed=%d req_gpu_type=%s min_gpu_memory_mb=%d",
+						j.JobID,
+						run.RunID,
+						effectiveNodes[i].Name,
+						reason,
+						gpuNeeded,
+						j.Spec.GPUType,
+						j.Spec.MinGPUMemoryMB,
+					)
+					rejectReason = reason
+					continue
 				}
-				rejectReason = reason
+
+				postFree := effectiveNodes[i].FreeGPUs() - gpuNeeded
+
+				memoryHeadroom := 0
+				if j.Spec.MinGPUMemoryMB > 0 {
+					memoryHeadroom = effectiveNodes[i].MemoryPerGPUmb - j.Spec.MinGPUMemoryMB
+				}
+
+				log.Printf(
+					"node candidate job_id=%s run_id=%s node=%s post_free_gpu=%d memory_headroom_mb=%d",
+					j.JobID,
+					run.RunID,
+					effectiveNodes[i].Name,
+					postFree,
+					memoryHeadroom,
+				)
+
+				if selected == nil ||
+					postFree < bestPostFree ||
+					(postFree == bestPostFree && memoryHeadroom < bestMemoryHeadroom) {
+
+					selected = &effectiveNodes[i]
+					bestPostFree = postFree
+					bestMemoryHeadroom = memoryHeadroom
+				}
 			}
 
 			if selected == nil {
@@ -550,28 +587,32 @@ func main() {
 					"checkpoint":        j.Spec.CheckpointURI,
 					"artifact":          j.Spec.ArtifactURI,
 					"scheduler_id":      schedulerID,
+					"placement_policy":  "best_fit_gpu",
 				})
 
 				continue
 			}
 
 			log.Printf(
-				"selected node for job_id=%s run_id=%s node=%s need_gpu=%d free_gpu=%d node_gpu_type=%s req_gpu_type=%s min_gpu_memory_mb=%d job_type=%s",
+				"selected node for job_id=%s run_id=%s node=%s need_gpu=%d free_gpu=%d post_free_gpu=%d node_gpu_type=%s req_gpu_type=%s min_gpu_memory_mb=%d job_type=%s policy=%s",
 				j.JobID,
 				run.RunID,
 				selected.Name,
 				gpuNeeded,
 				selected.FreeGPUs(),
+				bestPostFree,
 				selected.GPUType,
 				j.Spec.GPUType,
 				j.Spec.MinGPUMemoryMB,
 				j.Spec.JobType,
+				"best_fit_gpu",
 			)
 
 			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_SELECTED", map[string]any{
 				"node":               selected.Name,
 				"gpu_needed":         gpuNeeded,
 				"free_gpu":           selected.FreeGPUs(),
+				"post_free_gpu":      bestPostFree,
 				"gpu_type":           selected.GPUType,
 				"memory_per_gpu_mb":  selected.MemoryPerGPUmb,
 				"requested_gpu_type": j.Spec.GPUType,
@@ -581,10 +622,12 @@ func main() {
 				"checkpoint":         j.Spec.CheckpointURI,
 				"artifact":           j.Spec.ArtifactURI,
 				"scheduler_id":       schedulerID,
+				"placement_policy":   "best_fit_gpu",
 			})
 
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 			command := j.Spec.Command
+
 			if j.Spec.JobType == "training" {
 				command = []string{
 					"/bin/sh",
