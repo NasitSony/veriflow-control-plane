@@ -136,7 +136,7 @@ For retry-enabled jobs:
 
 Veriflow resumes failed training runs from the latest checkpoint instead of restarting from scratch.
 
-### 4. Failure Storm Behavior
+### 5. Failure Storm Behavior
 - Multiple jobs failed concurrently
 - Scheduler:
   - continued processing
@@ -144,6 +144,12 @@ Veriflow resumes failed training runs from the latest checkpoint instead of rest
   - avoided duplicate claims
 
 System remains consistent under failure bursts.
+
+### GPU Placement Validation
+- verified best-fit placement selects tighter-fit nodes when multiple nodes satisfy a request
+- verified exact GPU type filtering (`requested_gpu_type = A100`)
+- verified minimum per-GPU memory filtering (`min_gpu_memory_mb`)
+- verified explicit deferred placement reasons for unsatisfied constraints
 
 ## 📊 Event Summary (example run)
 - 40+ RUN_CREATED
