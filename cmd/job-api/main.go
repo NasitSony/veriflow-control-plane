@@ -80,11 +80,14 @@ func main() {
 			return
 		}
 
+
+
+
 		// 🔥 ADD THIS BLOCK
-		if spec.JobType == "training" && spec.DatasetURI == "" {
-			writeError(w, 400, "invalid_spec", "datasetUri required for training jobs")
-			return
-		}
+		if (spec.JobType == "training" || spec.JobType == "batch-inference" || spec.JobType == "evaluation") && spec.DatasetURI == "" {
+	        writeError(w, 400, "invalid_spec", "datasetUri is required for AI workloads")
+	       return
+        }
 
 		if spec.GPUCount < 0 {
 			writeError(w, 400, "invalid_spec", "gpuCount must be >= 0")
@@ -100,6 +103,19 @@ func main() {
 			spec.Priority,
 			spec.Image,
 		)
+
+
+	    validJobType := spec.JobType == "training" || spec.JobType == "batch-inference" || spec.JobType == "evaluation"
+        if spec.JobType == "" {
+	          writeError(w, 400, "invalid_spec", "jobType is required")
+	          return
+        }
+  
+		if !validJobType {
+	         writeError(w, 400, "invalid_spec", "jobType must be one of: training, batch-inference, evaluation")
+	         return
+        }
+
 
 		job, replay, err := store.CreateJobIdempotent(r.Context(), idemKey, spec)
 		if err != nil {

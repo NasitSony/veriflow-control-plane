@@ -13,6 +13,7 @@ import (
 
 	"github.com/NasitSony/veriflow/internal/db"
 	"github.com/NasitSony/veriflow/internal/k8s"
+	runtimestatus "github.com/NasitSony/veriflow/internal/runtime"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +83,8 @@ func main() {
 	defer pool.Close()
 
 	store := db.NewStore(pool)
+
+	lastSeenStatus := map[uuid.UUID]*runtimestatus.RunStatus{}
 
 	go func() {
 		t := time.NewTicker(1 * time.Second)
@@ -153,10 +156,213 @@ func main() {
 						continue
 					}
 
+					statusFile := fmt.Sprintf("/tmp/veriflow-status/%s.json", r.RunID.String())
+
+					rs, err := runtimestatus.ReadRunStatus(statusFile)
+					statusLoaded := false
+
+					if err != nil {
+						// Missing status file is normal early in execution.
+						// Malformed or unreadable status should not break reconciliation.
+
+						if !os.IsNotExist(err) {
+							log.Printf("read run status job_id=%s run_id=%s path=%s err=%v", r.JobID, r.RunID, statusFile, err)
+						}
+					} else {
+						// Optional sanity checks
+
+						statusLoaded = true
+						prev := lastSeenStatus[r.RunID]
+
+						if rs.RunID != "" && rs.RunID != r.RunID.String() {
+							log.Printf("status run_id mismatch job_id=%s expected=%s got=%s", r.JobID, r.RunID, rs.RunID)
+						} else {
+
+							switch rs.JobType {
+
+							case "training":
+								if rs.Training != nil {
+									curr := rs.Training
+
+									var prevT *runtimestatus.TrainingStatus
+									if prev != nil {
+										prevT = prev.Training
+									}
+
+									phaseChanged := prev == nil || rs.Phase != prev.Phase
+									messageChanged := prev == nil || rs.Message != prev.Message
+
+									if prevT == nil ||
+										curr.Epoch != prevT.Epoch ||
+										curr.Step != prevT.Step ||
+										!floatPtrEqual(curr.Loss, prevT.Loss) ||
+										!floatPtrEqual(curr.Accuracy, prevT.Accuracy) || phaseChanged || messageChanged {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "TRAINING_PROGRESS", map[string]any{
+											"phase":      rs.Phase,
+											"epoch":      curr.Epoch,
+											"step":       curr.Step,
+											"loss":       curr.Loss,
+											"accuracy":   curr.Accuracy,
+											"updated_at": rs.UpdatedAt,
+											"message":    rs.Message,
+										})
+									}
+
+									if curr.CheckpointPath != "" &&
+										(prevT == nil || curr.CheckpointPath != prevT.CheckpointPath) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "CHECKPOINT_SAVED", map[string]any{
+											"phase":           rs.Phase,
+											"checkpoint_path": curr.CheckpointPath,
+											"epoch":           curr.Epoch,
+											"step":            curr.Step,
+											"updated_at":      rs.UpdatedAt,
+										})
+
+										if err := store.UpdateLatestCheckpointURI(ctx, r.JobID, curr.CheckpointPath); err != nil {
+											log.Printf("checkpoint update failed job_id=%s run_id=%s err=%v",
+												r.JobID, r.RunID, err)
+										} else {
+											log.Printf("checkpoint updated job_id=%s run_id=%s path=%s",
+												r.JobID, r.RunID, curr.CheckpointPath)
+										}
+									}
+
+									if curr.ArtifactPath != "" &&
+										(prevT == nil || curr.ArtifactPath != prevT.ArtifactPath) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "ARTIFACT_WRITTEN", map[string]any{
+											"phase":         rs.Phase,
+											"artifact_path": curr.ArtifactPath,
+											"epoch":         curr.Epoch,
+											"step":          curr.Step,
+											"updated_at":    rs.UpdatedAt,
+										})
+									}
+								}
+
+							case "batch-inference":
+								if rs.Inference != nil {
+									curr := rs.Inference
+
+									var prevI *runtimestatus.InferenceStatus
+									if prev != nil {
+										prevI = prev.Inference
+									}
+
+									if prevI == nil ||
+										curr.ProcessedBatches != prevI.ProcessedBatches ||
+										curr.LatencyMs != prevI.LatencyMs {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "INFERENCE_PROGRESS", map[string]any{
+											"phase":             rs.Phase,
+											"processed_batches": curr.ProcessedBatches,
+											"latency_ms":        curr.LatencyMs,
+											"updated_at":        rs.UpdatedAt,
+											"message":           rs.Message,
+										})
+									}
+
+									if curr.ResultsPath != "" &&
+										(prevI == nil || curr.ResultsPath != prevI.ResultsPath) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RESULTS_WRITTEN", map[string]any{
+											"phase":        rs.Phase,
+											"results_path": curr.ResultsPath,
+											"updated_at":   rs.UpdatedAt,
+										})
+									}
+
+									if curr.ArtifactPath != "" &&
+										(prevI == nil || curr.ArtifactPath != prevI.ArtifactPath) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "ARTIFACT_WRITTEN", map[string]any{
+											"phase":         rs.Phase,
+											"artifact_path": curr.ArtifactPath,
+											"updated_at":    rs.UpdatedAt,
+										})
+									}
+								}
+
+							case "evaluation":
+								if rs.Evaluation != nil {
+									curr := rs.Evaluation
+
+									var prevE *runtimestatus.EvaluationStatus
+									if prev != nil {
+										prevE = prev.Evaluation
+									}
+
+									if prevE == nil ||
+										curr.Step != prevE.Step ||
+										!floatPtrEqual(curr.Loss, prevE.Loss) ||
+										!floatPtrEqual(curr.Accuracy, prevE.Accuracy) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "EVALUATION_PROGRESS", map[string]any{
+											"phase":      rs.Phase,
+											"step":       curr.Step,
+											"loss":       curr.Loss,
+											"accuracy":   curr.Accuracy,
+											"updated_at": rs.UpdatedAt,
+											"message":    rs.Message,
+										})
+									}
+
+									if curr.ResultsPath != "" &&
+										(prevE == nil || curr.ResultsPath != prevE.ResultsPath) {
+
+										_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RESULTS_WRITTEN", map[string]any{
+											"phase":        rs.Phase,
+											"results_path": curr.ResultsPath,
+											"updated_at":   rs.UpdatedAt,
+										})
+									}
+								}
+							}
+						}
+					}
+
 					kjob, err := k8sClient.BatchV1().Jobs("default").Get(ctx, r.K8sJobName, metav1.GetOptions{})
 					if err != nil {
 						log.Printf("reconcile get job=%s err=%v", r.K8sJobName, err)
 						continue
+					}
+
+					// Pod-level failure detection (more reliable than only using Job status)
+					pods, err := k8sClient.CoreV1().Pods("default").List(ctx, metav1.ListOptions{
+						LabelSelector: fmt.Sprintf("job-name=%s", r.K8sJobName),
+					})
+					if err != nil {
+						log.Printf("list pods error job=%s err=%v", r.K8sJobName, err)
+						continue
+					}
+
+					podFailed := false
+					podFailReason := ""
+
+					for _, pod := range pods.Items {
+						for _, cs := range pod.Status.ContainerStatuses {
+							if cs.State.Terminated != nil {
+								term := cs.State.Terminated
+								if term.ExitCode != 0 {
+									podFailed = true
+									podFailReason = fmt.Sprintf("container_exit_%d", term.ExitCode)
+									log.Printf(
+										"pod failed job_id=%s run_id=%s pod=%s container=%s exit_code=%d",
+										r.JobID,
+										r.RunID,
+										pod.Name,
+										cs.Name,
+										term.ExitCode,
+									)
+									break
+								}
+							}
+						}
+						if podFailed {
+							break
+						}
 					}
 
 					// If job has started pods, mark running
@@ -165,18 +371,53 @@ func main() {
 					}
 
 					// Terminal states
+					if podFailed {
+						delete(lastSeenStatus, r.RunID)
+
+						log.Printf("run failed job_id=%s run_id=%s reason=%s", r.JobID, r.RunID, podFailReason)
+
+						_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RUN_FAILED", map[string]any{
+							"reason": podFailReason,
+						})
+
+						if err := store.MarkRunFailedOnly(ctx, r.RunID, podFailReason); err != nil {
+							log.Printf("mark run failed error job_id=%s run_id=%s err=%v", r.JobID, r.RunID, err)
+						}
+
+						log.Printf("triggering retry job_id=%s run_id=%s", r.JobID, r.RunID)
+						if err := store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, podFailReason); err != nil {
+							log.Printf("retry scheduling failed job_id=%s run_id=%s err=%v", r.JobID, r.RunID, err)
+						} else {
+							log.Printf("retry scheduling succeeded job_id=%s run_id=%s", r.JobID, r.RunID)
+						}
+
+						continue
+					}
+
 					if kjob.Status.Succeeded > 0 {
+						delete(lastSeenStatus, r.RunID)
 						_ = store.MarkRunSucceededOnly(ctx, r.RunID)
 						_ = store.MarkJobSucceeded(ctx, r.JobID, r.RunID)
 						continue
 					}
+
 					if kjob.Status.Failed > 0 {
-						//reason := "k8s_job_failed"
-						//_ = store.MarkRunFailed(ctx, r.JobID, r.RunID, reason)
+						delete(lastSeenStatus, r.RunID)
 						log.Printf("run failed job_id=%s run_id=%s reason=%s", r.JobID, r.RunID, "k8s_job_failed")
-						_ = store.MarkRunFailedOnly(ctx, r.RunID, "k8s_job_failed")
-						_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "k8s_job_failed")
+
+						if r.State != "FAILED" {
+							_ = store.AddJobEvent(ctx, r.JobID, &r.RunID, "RUN_FAILED", map[string]any{
+								"reason": "k8s_job_failed",
+							})
+
+							_ = store.MarkRunFailedOnly(ctx, r.RunID, "k8s_job_failed")
+							_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "k8s_job_failed")
+						}
 						continue
+					}
+
+					if statusLoaded {
+						lastSeenStatus[r.RunID] = rs
 					}
 				}
 			}
@@ -302,20 +543,136 @@ func main() {
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 
 			command := j.Spec.Command
-			if j.Spec.JobType == "training" && len(command) == 0 {
 
+			if j.Spec.JobType == "training" {
 				command = []string{
 					"/bin/sh",
 					"-c",
-					"echo starting training job; " +
-						"if [ -n \"$CHECKPOINT_URI\" ]; then echo resuming from checkpoint=$CHECKPOINT_URI; else echo no checkpoint provided; fi; " +
+					`
+echo "starting training job"
+if [ -n "$CHECKPOINT_URI" ]; then
+  echo "resuming from checkpoint=$CHECKPOINT_URI"
+else
+  echo "no checkpoint provided"
+fi
+echo "dataset=$DATASET_URI"
+
+mkdir -p "$(dirname "$STATUS_PATH")"
+mkdir -p /artifacts
+
+cat <<EOF > "$STATUS_PATH"
+{
+  "runId": "$RUN_ID",
+  "jobType": "training",
+  "phase": "running",
+  "updatedAt": "2026-03-28T16:10:00Z",
+  "message": "training started",
+  "training": {
+    "epoch": 1,
+    "step": 100,
+    "loss": 0.84,
+    "accuracy": 0.71
+  }
+}
+EOF
+
+echo "wrote training status epoch=1"
+sleep 2
+
+cat <<EOF > "$STATUS_PATH"
+{
+  "runId": "$RUN_ID",
+  "jobType": "training",
+  "phase": "running",
+  "updatedAt": "2026-03-28T16:11:00Z",
+  "message": "training progressing",
+  "training": {
+    "epoch": 2,
+    "step": 200,
+    "loss": 0.61,
+    "accuracy": 0.79,
+    "checkpointPath": "/artifacts/ckpt-2"
+  }
+}
+EOF
+
+echo "wrote training status epoch=2 checkpoint=/artifacts/ckpt-2"
+sleep 2
+
+# First attempt: fail after checkpoint so retry can resume
+if [ -z "$CHECKPOINT_URI" ]; then
+  echo "simulating failure after checkpoint"
+  exit 1
+fi
+
+# Retry path: resume and finish
+cat <<EOF > "$STATUS_PATH"
+{
+  "runId": "$RUN_ID",
+  "jobType": "training",
+  "phase": "running",
+  "updatedAt": "2026-03-28T16:12:00Z",
+  "message": "artifact written",
+  "training": {
+    "epoch": 3,
+    "step": 300,
+    "loss": 0.43,
+    "accuracy": 0.86,
+    "checkpointPath": "/artifacts/ckpt-2",
+    "artifactPath": "/artifacts/model-final"
+  }
+}
+EOF
+
+echo "wrote training status epoch=3 artifact=/artifacts/model-final"
+sleep 2
+
+cat <<EOF > "$STATUS_PATH"
+{
+  "runId": "$RUN_ID",
+  "jobType": "training",
+  "phase": "succeeded",
+  "updatedAt": "2026-03-28T16:13:00Z",
+  "message": "training complete",
+  "training": {
+    "epoch": 3,
+    "step": 300,
+    "loss": 0.43,
+    "accuracy": 0.86,
+    "checkpointPath": "/artifacts/ckpt-2",
+    "artifactPath": "/artifacts/model-final"
+  }
+}
+EOF
+
+echo "training complete"
+`,
+				}
+			}
+
+			if j.Spec.JobType == "batch-inference" && len(command) == 0 {
+				command = []string{
+					"/bin/sh",
+					"-c",
+					"echo starting batch inference job; " +
 						"echo dataset=$DATASET_URI; " +
-						"echo epoch=1 loss=0.84; sleep 2; " +
-						"echo epoch=2 loss=0.61; sleep 2; " +
-						"echo checkpoint saved path=/artifacts/ckpt-2; sleep 2; " +
-						"if [ -n \"$ARTIFACT_URI\" ]; then echo writing artifact to=$ARTIFACT_URI; else echo no artifact output configured; fi; " +
-						"echo epoch=3 loss=0.43; sleep 2; " +
-						"echo training complete",
+						"echo loading model artifact=$ARTIFACT_URI; sleep 2; " +
+						"echo processed_batch=1 latency_ms=120; sleep 1; " +
+						"echo processed_batch=2 latency_ms=110; sleep 1; " +
+						"echo processed_batch=3 latency_ms=115; sleep 1; " +
+						"echo batch inference complete",
+				}
+			}
+
+			if j.Spec.JobType == "evaluation" && len(command) == 0 {
+				command = []string{
+					"/bin/sh",
+					"-c",
+					"echo starting evaluation job; " +
+						"echo dataset=$DATASET_URI; sleep 2; " +
+						"echo validation_loss=0.52 accuracy=0.82; sleep 2; " +
+						"echo validation_loss=0.47 accuracy=0.85; sleep 2; " +
+						"echo evaluation complete",
 				}
 			}
 
@@ -335,6 +692,8 @@ func main() {
 				"DATASET_URI":    j.Spec.DatasetURI,
 				"CHECKPOINT_URI": j.Spec.CheckpointURI,
 				"ARTIFACT_URI":   j.Spec.ArtifactURI,
+				"RUN_ID":         run.RunID.String(),
+				"STATUS_PATH":    fmt.Sprintf("/status/%s.json", run.RunID.String()),
 			}
 
 			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "DISPATCH_REQUESTED", map[string]any{
@@ -342,6 +701,28 @@ func main() {
 				"image":        j.Spec.Image,
 				"job_type":     j.Spec.JobType,
 			})
+
+			if j.Spec.JobType == "training" && j.Spec.CheckpointURI != "" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "TRAINING_RESUMED", map[string]any{
+					"checkpoint_uri": j.Spec.CheckpointURI,
+					"attempt":        run.Attempt,
+				})
+			}
+
+			if j.Spec.JobType == "batch-inference" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "INFERENCE_STARTED", map[string]any{
+					"dataset":   j.Spec.DatasetURI,
+					"gpu_count": j.Spec.GPUCount,
+					"artifact":  j.Spec.ArtifactURI,
+				})
+			}
+
+			if j.Spec.JobType == "evaluation" {
+				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "EVALUATION_STARTED", map[string]any{
+					"dataset":   j.Spec.DatasetURI,
+					"gpu_count": j.Spec.GPUCount,
+				})
+			}
 
 			alreadyDispatched, existingJobName, err := store.RunAlreadyDispatched(ctx, run.RunID)
 			if err != nil {
@@ -451,4 +832,14 @@ func nextQueueOrder(queues []string, start int) []string {
 		out = append(out, queues[idx])
 	}
 	return out
+}
+
+func floatPtrEqual(a, b *float64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
