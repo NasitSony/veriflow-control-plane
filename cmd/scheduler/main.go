@@ -84,7 +84,7 @@ func nodeFitsGPU(node NodeCapacity, spec db.JobSpec) (bool, string) {
 		if spec.MinGPUMemoryMB > 0 && memMismatch {
 			return false, "insufficient_gpu_memory"
 		}
-		return false, "insufficient_gpu_count"
+		return false, "gang_unsatisfied"
 	}
 
 	return true, ""
@@ -721,11 +721,19 @@ func main() {
 					"insufficient_gpu_devices_after_selection",
 				)
 
+				log.Printf(
+					"gang scheduling unsatisfied job_id=%s run_id=%s need_gpu=%d available=%d",
+					j.JobID,
+					run.RunID,
+					gpuNeeded,
+					countMatchingFreeGPUs(*selected, j.Spec),
+				)
+
 				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "PLACEMENT_DEFERRED", map[string]any{
-					"reason":           "insufficient_gpu_devices_after_selection",
+					"reason":           "gang_unsatisfied",
 					"gpu_needed":       gpuNeeded,
 					"scheduler_id":     schedulerID,
-					"placement_policy": "best_fit_gpu_devices",
+					"placement_policy": "best_fit_gpu_devices_gang",
 				})
 
 				continue
