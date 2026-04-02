@@ -205,7 +205,7 @@ Example:
   "gpuCount": 2,
   "gpuType": "A100",
   "minGpuMemoryMb": 30000
-}
+}```
 
 ## 🚀 One-Command Demo
 
