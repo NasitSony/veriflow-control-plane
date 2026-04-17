@@ -128,7 +128,7 @@ For retry-enabled jobs:
 
 - resumed execution:
 
- ``` TRAINING_RESUMED```
+  ``` TRAINING_RESUMED```
 
 - final success:
 
