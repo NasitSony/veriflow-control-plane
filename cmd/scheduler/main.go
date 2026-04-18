@@ -11,14 +11,24 @@ import (
 	"syscall"
 	"time"
 
+	// Internal packages:
+	// db: persistent store access
+	// k8s: Kubernetes job launcher helper
+	// runtimestatus: reads per-run status JSON files written by workers
 	"github.com/NasitSony/veriflow/internal/db"
 	"github.com/NasitSony/veriflow/internal/k8s"
 	runtimestatus "github.com/NasitSony/veriflow/internal/runtime"
+
+	// uuid: typed IDs for jobs/runs
+	// pgxpool: PostgreSQL connection pool
+	// metav1: Kubernetes list/get options and metadata types
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// GPUDevice models one GPU on a node.
+// Allocated is the scheduler's current view of whether that GPU is in use.
 type GPUDevice struct {
 	ID        string `json:"id"`
 	Type      string `json:"type"`
@@ -26,11 +36,13 @@ type GPUDevice struct {
 	Allocated bool   `json:"allocated"`
 }
 
+// NodeCapacity models one node and its GPU inventory.
 type NodeCapacity struct {
 	Name string      `json:"name"`
 	GPUs []GPUDevice `json:"gpus"`
 }
 
+// FreeGPUs counts how many GPUs on a node are currently unallocated.
 func (n NodeCapacity) FreeGPUs() int {
 	count := 0
 	for _, g := range n.GPUs {
@@ -41,12 +53,17 @@ func (n NodeCapacity) FreeGPUs() int {
 	return count
 }
 
+// Per-queue GPU quota policy.
+// This is a simple fairness / multi-tenant control mechanism.
 var queueGPUQuota = map[string]int{
 	"default":  4,
 	"research": 2,
 	"batch":    1,
 }
 
+// countMatchingFreeGPUs counts free GPUs on a node that satisfy a job's GPU constraints:
+// - type match if requested
+// - minimum memory match if requested
 func countMatchingFreeGPUs(node NodeCapacity, spec db.JobSpec) int {
 	count := 0
 	for _, g := range node.GPUs {
@@ -64,11 +81,14 @@ func countMatchingFreeGPUs(node NodeCapacity, spec db.JobSpec) int {
 	return count
 }
 
+// nodeFitsGPU answers:
+// "Can this node satisfy the job's GPU request?"
+// If not, it also returns a more specific reason string.
 func nodeFitsGPU(node NodeCapacity, spec db.JobSpec) (bool, string) {
 	matching := countMatchingFreeGPUs(node, spec)
 
 	if matching < spec.GPUCount {
-		// decide more specific reason
+		// If total matching GPUs are insufficient, try to explain why.
 		typeMismatch := true
 		memMismatch := true
 
@@ -90,12 +110,15 @@ func nodeFitsGPU(node NodeCapacity, spec db.JobSpec) (bool, string) {
 		if spec.MinGPUMemoryMB > 0 && memMismatch {
 			return false, "insufficient_gpu_memory"
 		}
+		// Otherwise, not enough matching devices together to satisfy the group request.
 		return false, "gang_unsatisfied"
 	}
 
 	return true, ""
 }
 
+// selectGPUDevices performs the actual device selection after a node has been chosen.
+// Current strategy: simple deterministic first-N matching GPUs.
 func selectGPUDevices(node NodeCapacity, spec db.JobSpec) ([]GPUDevice, bool) {
 	candidates := make([]GPUDevice, 0)
 
@@ -116,10 +139,10 @@ func selectGPUDevices(node NodeCapacity, spec db.JobSpec) ([]GPUDevice, bool) {
 		return nil, false
 	}
 
-	// Simple deterministic choice: take first N matching free GPUs
 	return candidates[:spec.GPUCount], true
 }
 
+// SchedulerStatus is a small JSON snapshot written to disk for observability/debugging.
 type SchedulerStatus struct {
 	Queue        string         `json:"queue"`
 	Nodes        []NodeCapacity `json:"nodes"`
@@ -128,6 +151,8 @@ type SchedulerStatus struct {
 	PendingClaim bool           `json:"pendingClaim"`
 }
 
+// Older/simple node picker: first node with enough free GPUs.
+// Not the main placement policy anymore, but still present in the file.
 func pickNodeForJob(nodes []NodeCapacity, gpuCount int) (NodeCapacity, bool) {
 	for _, n := range nodes {
 		if n.FreeGPUs() >= gpuCount {
@@ -137,6 +162,8 @@ func pickNodeForJob(nodes []NodeCapacity, gpuCount int) (NodeCapacity, bool) {
 	return NodeCapacity{}, false
 }
 
+// writeSchedulerStatus serializes scheduler state to a JSON file.
+// Used for quick external introspection.
 func writeSchedulerStatus(path string, status SchedulerStatus) {
 	data, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
@@ -149,26 +176,27 @@ func writeSchedulerStatus(path string, status SchedulerStatus) {
 }
 
 func main() {
-
+	// Create Kubernetes client. Fatal if unavailable.
 	k8sClient, err := k8s.NewClient()
 	if err != nil {
 		log.Fatalf("k8s client error: %v", err)
 	}
 
+	// Read runtime configuration from env with defaults.
 	dsn := envOr("DATABASE_URL", "postgres://veriflow:veriflow@localhost:5436/veriflow?sslmode=disable")
 	queues := parseQueues(envOr("QUEUES", "default"))
 	queueIdx := 0
 	interval := envOrDuration("SCHED_INTERVAL", 700*time.Millisecond)
 
 	heartbeatStaleAfter := envOrDuration("HEARTBEAT_STALE_AFTER", 15*time.Second)
-
 	statusPath := envOr("SCHED_STATUS_PATH", "/tmp/veriflow-scheduler-status.json")
-
 	schedulerID := envOr("SCHEDULER_ID", "sched-unknown")
 
+	// Graceful shutdown context on Ctrl+C / SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Open database pool and wrap in store abstraction.
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		log.Fatalf("db pool: %v", err)
@@ -177,8 +205,15 @@ func main() {
 
 	store := db.NewStore(pool)
 
+	// Tracks last runtime status seen per run to avoid duplicate progress events.
 	lastSeenStatus := map[uuid.UUID]*runtimestatus.RunStatus{}
 
+	// Background reconciler loop:
+	// - checks timeouts
+	// - checks stale heartbeats
+	// - reads status files
+	// - checks K8s job/pod states
+	// - triggers failure/retry/success transitions
 	go func() {
 		t := time.NewTicker(1 * time.Second)
 		defer t.Stop()
@@ -188,13 +223,14 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				// Pull active runs to reconcile.
 				runs, err := store.ListActiveRuns(ctx, 50)
-
 				if err != nil {
 					log.Printf("reconcile list runs error: %v", err)
 					continue
 				}
 
+				// Build a set/map of timed-out runs.
 				timedOutRuns, err := store.ListTimedOutRuns(ctx)
 				if err != nil {
 					log.Printf("list timed out runs error: %v", err)
@@ -209,6 +245,7 @@ func main() {
 					}
 				}
 
+				// Build a set/map of runs whose heartbeat has gone stale.
 				staleRuns, err := store.ListHeartbeatStaleRuns(ctx, heartbeatStaleAfter)
 				if err != nil {
 					log.Printf("list heartbeat stale runs error: %v", err)
@@ -220,9 +257,8 @@ func main() {
 				}
 
 				for _, r := range runs {
-
-					//timedOutRuns, err := store.ListTimedOutRuns(ctx)
-
+					// Timeout handling:
+					// emit event, mark failed, schedule retry/failover.
 					if timeoutSec, ok := timedOutMap[r.RunID]; ok {
 						log.Printf("run timeout job_id=%s run_id=%s timeout=%ds", r.JobID, r.RunID, timeoutSec)
 
@@ -232,10 +268,11 @@ func main() {
 
 						_ = store.MarkRunFailedOnly(ctx, r.RunID, "job_timeout")
 						_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "job_timeout")
-
 						continue
 					}
 
+					// Heartbeat-stale handling:
+					// emit event, mark failed, schedule retry/failover.
 					if _, ok := staleRunMap[r.RunID]; ok {
 						log.Printf("heartbeat stale job_id=%s run_id=%s stale_after=%s", r.JobID, r.RunID, heartbeatStaleAfter)
 
@@ -245,32 +282,30 @@ func main() {
 
 						_ = store.MarkRunFailedOnly(ctx, r.RunID, "heartbeat_stale")
 						_ = store.ScheduleRetryOrFail(ctx, r.JobID, r.RunID, "heartbeat_stale")
-
 						continue
 					}
 
+					// Read per-run status file written by the worker.
 					statusFile := fmt.Sprintf("/tmp/veriflow-status/%s.json", r.RunID.String())
 
 					rs, err := runtimestatus.ReadRunStatus(statusFile)
 					statusLoaded := false
 
 					if err != nil {
-						// Missing status file is normal early in execution.
-						// Malformed or unreadable status should not break reconciliation.
-
+						// Missing file is normal early in execution.
+						// Malformed file is logged but not fatal.
 						if !os.IsNotExist(err) {
 							log.Printf("read run status job_id=%s run_id=%s path=%s err=%v", r.JobID, r.RunID, statusFile, err)
 						}
 					} else {
-						// Optional sanity checks
-
 						statusLoaded = true
 						prev := lastSeenStatus[r.RunID]
 
+						// Optional sanity check: runId inside file should match DB runId.
 						if rs.RunID != "" && rs.RunID != r.RunID.String() {
 							log.Printf("status run_id mismatch job_id=%s expected=%s got=%s", r.JobID, r.RunID, rs.RunID)
 						} else {
-
+							// Emit progress / artifact / checkpoint events depending on job type.
 							switch rs.JobType {
 
 							case "training":
@@ -285,6 +320,7 @@ func main() {
 									phaseChanged := prev == nil || rs.Phase != prev.Phase
 									messageChanged := prev == nil || rs.Message != prev.Message
 
+									// Emit TRAINING_PROGRESS only when something actually changed.
 									if prevT == nil ||
 										curr.Epoch != prevT.Epoch ||
 										curr.Step != prevT.Step ||
@@ -302,6 +338,7 @@ func main() {
 										})
 									}
 
+									// If checkpoint path changed, emit CHECKPOINT_SAVED and update latest checkpoint in DB.
 									if curr.CheckpointPath != "" &&
 										(prevT == nil || curr.CheckpointPath != prevT.CheckpointPath) {
 
@@ -322,6 +359,7 @@ func main() {
 										}
 									}
 
+									// If final artifact path changed, emit ARTIFACT_WRITTEN.
 									if curr.ArtifactPath != "" &&
 										(prevT == nil || curr.ArtifactPath != prevT.ArtifactPath) {
 
@@ -416,13 +454,15 @@ func main() {
 						}
 					}
 
+					// Reconcile against Kubernetes Job object.
 					kjob, err := k8sClient.BatchV1().Jobs("default").Get(ctx, r.K8sJobName, metav1.GetOptions{})
 					if err != nil {
 						log.Printf("reconcile get job=%s err=%v", r.K8sJobName, err)
 						continue
 					}
 
-					// Pod-level failure detection (more reliable than only using Job status)
+					// Pod-level failure detection:
+					// this can be more informative and immediate than only looking at Job.Status.
 					pods, err := k8sClient.CoreV1().Pods("default").List(ctx, metav1.ListOptions{
 						LabelSelector: fmt.Sprintf("job-name=%s", r.K8sJobName),
 					})
@@ -458,12 +498,12 @@ func main() {
 						}
 					}
 
-					// If job has started pods, mark running
+					// If K8s shows activity or terminal state, mark run RUNNING if not already.
 					if r.State != "RUNNING" && (kjob.Status.Active > 0 || kjob.Status.Succeeded > 0 || kjob.Status.Failed > 0) {
 						_ = store.MarkRunRunning(ctx, r.JobID, r.RunID)
 					}
 
-					// Terminal states
+					// Pod-level failure path.
 					if podFailed {
 						delete(lastSeenStatus, r.RunID)
 
@@ -487,6 +527,7 @@ func main() {
 						continue
 					}
 
+					// Success path.
 					if kjob.Status.Succeeded > 0 {
 						delete(lastSeenStatus, r.RunID)
 						_ = store.MarkRunSucceededOnly(ctx, r.RunID)
@@ -494,6 +535,7 @@ func main() {
 						continue
 					}
 
+					// Job-controller failure path.
 					if kjob.Status.Failed > 0 {
 						delete(lastSeenStatus, r.RunID)
 						log.Printf("run failed job_id=%s run_id=%s reason=%s", r.JobID, r.RunID, "k8s_job_failed")
@@ -509,6 +551,7 @@ func main() {
 						continue
 					}
 
+					// Save loaded status as last seen, so next pass can emit only diffs.
 					if statusLoaded {
 						lastSeenStatus[r.RunID] = rs
 					}
@@ -517,31 +560,7 @@ func main() {
 		}
 	}()
 
-	// 🔥 Day 3: basic GPU inventory
-	/*nodes := []NodeCapacity{
-		{
-			Name:           "gpu-node-a",
-			GPUType:        "A100",
-			TotalGPUs:      4,
-			UsedGPUs:       0,
-			MemoryPerGPUmb: 40000,
-		},
-		{
-			Name:           "gpu-node-b",
-			GPUType:        "L4",
-			TotalGPUs:      2,
-			UsedGPUs:       0,
-			MemoryPerGPUmb: 24000,
-		},
-	}
-
-	writeSchedulerStatus(statusPath, SchedulerStatus{
-		Queue:       strings.Join(queues, ","),
-		Nodes:       nodes,
-		LastUpdated: time.Now().UTC(),
-		ActiveRuns:  0,
-	})*/
-
+	// Main scheduler loop tick interval.
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -553,13 +572,8 @@ func main() {
 			log.Printf("scheduler shutting down")
 			return
 		case <-ticker.C:
-
-			/*usageByNode, err := store.GetActiveGPUUsageByNode(ctx)
-			if err != nil {
-				log.Printf("gpu usage query error: %v", err)
-				continue
-			}*/
-
+			// Mock/live candidate node inventory.
+			// Right now this is hardcoded; later this would come from real cluster/device state.
 			effectiveNodes := []NodeCapacity{
 				{
 					Name: "gpu-node-a",
@@ -579,6 +593,7 @@ func main() {
 				},
 			}
 
+			// Publish scheduler snapshot before claim attempt.
 			writeSchedulerStatus(statusPath, SchedulerStatus{
 				Queue:        strings.Join(queues, ","),
 				Nodes:        effectiveNodes,
@@ -593,8 +608,10 @@ func main() {
 				ok  bool
 			)
 
+			// Fairness across queues: rotate starting queue each tick.
 			queueOrder := nextQueueOrder(queues, queueIdx)
 
+			// Try claiming one pending job from one of the queues.
 			for _, q := range queueOrder {
 				j, run, ok, err = store.ClaimNextPendingJob(ctx, q)
 				if err != nil {
@@ -613,6 +630,7 @@ func main() {
 				continue
 			}
 
+			// Update status snapshot after claim.
 			writeSchedulerStatus(statusPath, SchedulerStatus{
 				Queue:        strings.Join(queues, ","),
 				Nodes:        effectiveNodes,
@@ -621,6 +639,7 @@ func main() {
 				PendingClaim: false,
 			})
 
+			// Enforce per-queue GPU quota before placement.
 			usageByQueue, err := store.CurrentGPUUsageByQueue(ctx)
 			if err != nil {
 				log.Printf("gpu usage by queue error: %v", err)
@@ -659,7 +678,10 @@ func main() {
 			var selected *NodeCapacity
 			var rejectReason string
 
-			bestPostFree := int(^uint(0) >> 1) // max int
+			// Best-fit objective:
+			// prefer node leaving the smallest remaining free GPU count after placement.
+			// tie-break with smallest memory headroom.
+			bestPostFree := int(^uint(0) >> 1)
 			bestMemoryHeadroom := int(^uint(0) >> 1)
 
 			for i := range effectiveNodes {
@@ -683,7 +705,7 @@ func main() {
 
 				memoryHeadroom := 0
 				if j.Spec.MinGPUMemoryMB > 0 && len(effectiveNodes[i].GPUs) > 0 {
-					// use smallest matching headroom as tie-break
+					// tie-break: smallest leftover memory above required minimum
 					minHeadroom := int(^uint(0) >> 1)
 					for _, g := range effectiveNodes[i].GPUs {
 						if g.Allocated {
@@ -724,6 +746,7 @@ func main() {
 				}
 			}
 
+			// No node satisfies placement constraints.
 			if selected == nil {
 				log.Printf(
 					"placement deferred job_id=%s run_id=%s reason=%s gpu_needed=%d gpu_type=%s min_gpu_memory_mb=%d",
@@ -751,6 +774,7 @@ func main() {
 				continue
 			}
 
+			// Select exact GPU devices on the chosen node.
 			selectedGPUs, ok := selectGPUDevices(*selected, j.Spec)
 			if !ok {
 				log.Printf(
@@ -778,6 +802,7 @@ func main() {
 				continue
 			}
 
+			// Extract selected GPU IDs/types for logging and env injection.
 			selectedIDs := make([]string, 0, len(selectedGPUs))
 			selectedType := ""
 			for _, g := range selectedGPUs {
@@ -820,9 +845,15 @@ func main() {
 				"scheduler_id":       schedulerID,
 				"placement_policy":   "best_fit_gpu_devices",
 			})
+
 			jobName := fmt.Sprintf("run-%s", run.RunID.String())
 			command := j.Spec.Command
 
+			// Mock/demo training workload:
+			// - writes status JSON
+			// - writes checkpoint
+			// - fails once if no checkpoint URI
+			// - resumes and succeeds on retry
 			if j.Spec.JobType == "training" {
 				command = []string{
 					"/bin/sh",
@@ -878,13 +909,11 @@ EOF
 echo "wrote training status epoch=2 checkpoint=/artifacts/ckpt-2"
 sleep 2
 
-# First attempt: fail after checkpoint so retry can resume
 if [ -z "$CHECKPOINT_URI" ]; then
   echo "simulating failure after checkpoint"
   exit 1
 fi
 
-# Retry path: resume and finish
 cat <<EOF > "$STATUS_PATH"
 {
   "runId": "$RUN_ID",
@@ -929,6 +958,7 @@ echo "training complete"
 				}
 			}
 
+			// Mock batch inference workload if no custom command provided.
 			if j.Spec.JobType == "batch-inference" && len(command) == 0 {
 				command = []string{
 					"/bin/sh",
@@ -943,6 +973,7 @@ echo "training complete"
 				}
 			}
 
+			// Mock evaluation workload if no custom command provided.
 			if j.Spec.JobType == "evaluation" && len(command) == 0 {
 				command = []string{
 					"/bin/sh",
@@ -966,6 +997,8 @@ echo "training complete"
 				j.Spec.ArtifactURI,
 			)
 
+			// Env passed into the worker container.
+			// STATUS_PATH is where worker writes runtime progress JSON.
 			env := map[string]string{
 				"JOB_TYPE":       j.Spec.JobType,
 				"DATASET_URI":    j.Spec.DatasetURI,
@@ -975,6 +1008,7 @@ echo "training complete"
 				"STATUS_PATH":    fmt.Sprintf("/status/%s.json", run.RunID.String()),
 			}
 
+			// Pass exact selected GPU device IDs into container.
 			if len(selectedIDs) > 0 {
 				env["GPU_DEVICE_IDS"] = strings.Join(selectedIDs, ",")
 			}
@@ -986,6 +1020,7 @@ echo "training complete"
 				env["GPU_DEVICE_IDS"],
 			)
 
+			// Emit dispatch-related lifecycle events.
 			_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "DISPATCH_REQUESTED", map[string]any{
 				"k8s_job_name": jobName,
 				"image":        j.Spec.Image,
@@ -1015,6 +1050,8 @@ echo "training complete"
 				})
 			}
 
+			// Idempotency guard:
+			// don't dispatch again if a K8s job was already created for this run.
 			alreadyDispatched, existingJobName, err := store.RunAlreadyDispatched(ctx, run.RunID)
 			if err != nil {
 				log.Printf("[%s] Dispatch check error job_id=%s run_id=%s err=%v", schedulerID, j.JobID, run.RunID, err)
@@ -1028,6 +1065,7 @@ echo "training complete"
 				continue
 			}
 
+			// Create Kubernetes Job.
 			err = k8s.CreateJob(
 				k8sClient,
 				"default",
@@ -1039,6 +1077,7 @@ echo "training complete"
 				run.RunID.String(),
 			)
 
+			// Dispatch failure path.
 			if err != nil {
 				log.Printf("k8s create error job_id=%s run_id=%s err=%v", j.JobID, run.RunID, err)
 				_ = store.AddJobEvent(ctx, j.JobID, &run.RunID, "DISPATCH_FAILED", map[string]any{
@@ -1048,16 +1087,10 @@ echo "training complete"
 				continue
 			}
 
+			// Mark run dispatched in DB.
 			if err := store.MarkRunDispatched(ctx, run.RunID, jobName); err != nil {
 				log.Printf("mark dispatched error: %v", err)
 			}
-
-			//if err != nil {
-			//log.Printf("k8s create error: %v", err)
-			//continue
-			//}
-
-			//_ = store.MarkRunDispatched(ctx, run.RunID, jobName)
 
 			log.Printf("[%s] DISPATCHED job_id=%s run_id=%s k8s_job=%s",
 				schedulerID, j.JobID, run.RunID, jobName)
@@ -1065,6 +1098,7 @@ echo "training complete"
 	}
 }
 
+// envOr returns env var value or a default.
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -1072,6 +1106,7 @@ func envOr(k, def string) string {
 	return def
 }
 
+// envOrDuration parses duration env var or returns default.
 func envOrDuration(k string, def time.Duration) time.Duration {
 	if v := os.Getenv(k); v != "" {
 		d, err := time.ParseDuration(v)
@@ -1082,6 +1117,8 @@ func envOrDuration(k string, def time.Duration) time.Duration {
 	return def
 }
 
+// parseQueues converts "a,b,c" -> []string{"a","b","c"} with trimming.
+// Falls back to ["default"].
 func parseQueues(raw string) []string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
@@ -1097,6 +1134,8 @@ func parseQueues(raw string) []string {
 	return out
 }
 
+// nextQueueOrder rotates queue order for fairness.
+// Example: queues=[a,b,c], start=1 => [b,c,a]
 func nextQueueOrder(queues []string, start int) []string {
 	if len(queues) == 0 {
 		return []string{"default"}
@@ -1109,13 +1148,16 @@ func nextQueueOrder(queues []string, start int) []string {
 	return out
 }
 
+// queueQuotaFor returns configured queue quota,
+// or a huge default if queue is unknown.
 func queueQuotaFor(queue string) int {
 	if q, ok := queueGPUQuota[queue]; ok {
 		return q
 	}
-	return 1 << 30 // effectively no quota
+	return 1 << 30
 }
 
+// floatPtrEqual safely compares *float64 values, including nil cases.
 func floatPtrEqual(a, b *float64) bool {
 	if a == nil && b == nil {
 		return true
