@@ -1,5 +1,10 @@
 
+
 ![CI](https://github.com/NasitSony/veriflow-control-plane/actions/workflows/go.yml/badge.svg)
+![Go Version](https://img.shields.io/badge/go-1.22-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Last Commit](https://img.shields.io/github/last-commit/NasitSony/veriflow-control-plane)
+![Stars](https://img.shields.io/github/stars/NasitSony/veriflow-control-plane?style=social)
 
 # Veriflow
 
