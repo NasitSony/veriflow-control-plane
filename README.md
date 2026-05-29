@@ -4,6 +4,8 @@
 
 ![Veriflow Architecture](docs/architecture.svg)
 
+<img src="docs/architecture.svg" alt="Veriflow Architecture" width="100%"/>
+
 Veriflow is a Kubernetes-based AI workload orchestrator that implements a **control-plane + scheduler architecture** for running training-style jobs with runtime awareness, failure recovery, and checkpoint-aware retry.
 
 It treats AI workloads as **distributed systems problems** — where scheduling, correctness, and failure handling are first-class concerns — rather than simple API execution.
