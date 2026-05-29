@@ -298,3 +298,22 @@ func (s *Store) CurrentGPUUsageByQueue(ctx context.Context) (map[string]int, err
 	}
 	return out, nil
 }
+func getJobByIDTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Job, error) {
+	row := tx.QueryRow(ctx, `
+		select job_id, created_at, updated_at, state, spec, queue, priority, max_retries
+		from jobs where job_id=$1
+	`, id)
+
+	var j Job
+	var specJSON []byte
+	if err := row.Scan(&j.JobID, &j.CreatedAt, &j.UpdatedAt, &j.State, &specJSON, &j.Queue, &j.Priority, &j.MaxRetries); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Job{}, ErrNotFound
+		}
+		return Job{}, err
+	}
+	if err := json.Unmarshal(specJSON, &j.Spec); err != nil {
+		return Job{}, err
+	}
+	return j, nil
+}
