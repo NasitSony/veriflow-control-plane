@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"errors"
@@ -317,3 +318,5 @@ func getJobByIDTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (Job, error) {
 	}
 	return j, nil
 }
+
+var ErrNotFound = errors.New("not found")
