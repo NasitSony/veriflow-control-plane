@@ -13,10 +13,20 @@ It treats AI workloads as **distributed systems problems** — where scheduling,
 
 ## Why Veriflow?
 
-...
+Training a large model overnight and waking up to find it crashed at hour 6 — 
+with no checkpoint, no retry, and no idea why — is a rite of passage in ML engineering.
 
-## Core Idea
-...
+Most job runners treat AI workloads like simple scripts: run it, and if it fails, restart from zero.
+But training jobs are long-running, stateful, and expensive. They need:
+
+- **Checkpoint-aware recovery** — resume from where it failed, not from scratch
+- **Concurrency-safe scheduling** — multiple schedulers, zero duplicate runs
+- **Runtime observability** — know *why* a job failed, not just *that* it failed
+- **GPU-aware placement** — match jobs to the right hardware, every time
+
+Veriflow treats AI training as what it actually is: a distributed systems problem.
+
+
 ## 🧠 Core Idea
 
 Modern AI systems are not just model pipelines — they are **distributed systems**.
