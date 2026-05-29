@@ -1,3 +1,6 @@
+
+![CI](https://github.com/NasitSony/veriflow-control-plane/actions/workflows/go.yml/badge.svg)
+
 # Veriflow
 
 > Checkpoint-aware, fault-tolerant job orchestration for AI training workloads.
