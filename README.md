@@ -2,7 +2,7 @@
 
 > Checkpoint-aware, fault-tolerant job orchestration for AI training workloads.
 
-![Veriflow Architecture](docs/architecture.png)
+![Veriflow Architecture](docs/architecture.svg)
 
 <img src="docs/architecture.svg" alt="Veriflow Architecture" width="100%"/>
 
