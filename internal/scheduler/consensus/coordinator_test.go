@@ -13,13 +13,13 @@ func TestCoordinatorCommit(t *testing.T) {
 		},
 	}
 
-	ok := c.Propose(LifecycleTransition{
+	decision := c.Propose(LifecycleTransition{
 		JobID: "job-1",
 		From:  StateRunning,
 		To:    StateSucceeded,
 	})
 
-	if !ok {
+	if !decision.Committed {
 		t.Fatal("expected commit")
 	}
 }
@@ -35,13 +35,13 @@ func TestCoordinatorReject(t *testing.T) {
 		},
 	}
 
-	ok := c.Propose(LifecycleTransition{
+	decision := c.Propose(LifecycleTransition{
 		JobID: "job-1",
 		From:  StatePending,
 		To:    StateSucceeded,
 	})
 
-	if ok {
+	if decision.Committed {
 		t.Fatal("expected rejection")
 	}
 }

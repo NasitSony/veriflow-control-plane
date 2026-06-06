@@ -13,13 +13,13 @@ func TestInvalidTransitionRejectedWithOneByzantineAlwaysYes(t *testing.T) {
 		},
 	}
 
-	ok := c.Propose(LifecycleTransition{
+	decision := c.Propose(LifecycleTransition{
 		JobID: "job-1",
 		From:  StatePending,
 		To:    StateSucceeded,
 	})
 
-	if ok {
+	if decision.Committed {
 		t.Fatal("expected invalid transition to be rejected despite one Byzantine YES")
 	}
 }
@@ -35,13 +35,13 @@ func TestValidTransitionCommitsWithOneByzantineAlwaysNo(t *testing.T) {
 		},
 	}
 
-	ok := c.Propose(LifecycleTransition{
+	decision := c.Propose(LifecycleTransition{
 		JobID: "job-1",
 		From:  StateRunning,
 		To:    StateSucceeded,
 	})
 
-	if !ok {
+	if !decision.Committed {
 		t.Fatal("expected valid transition to commit with 3 honest YES votes")
 	}
 }

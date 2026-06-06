@@ -16,7 +16,7 @@ func TestInvalidTransitionRejected(
 		},
 	}
 
-	ok := c.Propose(
+	decision := c.Propose(
 		LifecycleTransition{
 			JobID: "job-1",
 			From:  StatePending,
@@ -24,7 +24,7 @@ func TestInvalidTransitionRejected(
 		},
 	)
 
-	if ok {
+	if decision.Committed {
 		t.Fatal("expected rejection")
 	}
 }
