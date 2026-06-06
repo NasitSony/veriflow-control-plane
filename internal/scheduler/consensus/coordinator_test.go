@@ -17,6 +17,10 @@ func TestCoordinatorCommit(t *testing.T) {
 		JobID: "job-1",
 		From:  StateRunning,
 		To:    StateSucceeded,
+		Observation: PodObservation{
+			Phase:    PodSucceeded,
+			ExitCode: 0,
+		},
 	})
 
 	if !decision.Committed {

@@ -15,4 +15,6 @@ type LifecycleTransition struct {
 	From          LifecycleState
 	To            LifecycleState
 	CheckpointURI string
+
+	Observation PodObservation
 }
