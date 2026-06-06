@@ -3,6 +3,7 @@ package consensus
 type LifecycleState string
 
 const (
+	StatePending   LifecycleState = "PENDING"
 	StateRunning   LifecycleState = "RUNNING"
 	StateSucceeded LifecycleState = "SUCCEEDED"
 	StateFailed    LifecycleState = "FAILED"

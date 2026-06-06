@@ -5,19 +5,26 @@ type Validator interface {
 	Validate(t LifecycleTransition) Vote
 }
 
-type StaticValidator struct {
+type HonestValidator struct {
 	ValidatorID string
-	Accept      bool
 }
 
-func (v StaticValidator) ID() string {
+func (v HonestValidator) ID() string {
 	return v.ValidatorID
 }
 
-func (v StaticValidator) Validate(t LifecycleTransition) Vote {
+func (v HonestValidator) Validate(
+	t LifecycleTransition,
+) Vote {
+
+	valid := IsValidTransition(
+		t.From,
+		t.To,
+	)
+
 	return Vote{
 		ValidatorID: v.ValidatorID,
 		JobID:       t.JobID,
-		Accept:      v.Accept,
+		Accept:      valid,
 	}
 }
