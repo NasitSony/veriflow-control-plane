@@ -19,6 +19,10 @@ func TestProtocolDemo(t *testing.T) {
 			JobID: "job-42",
 			From:  StateRunning,
 			To:    StateSucceeded,
+			Observation: PodObservation{
+				Phase:    PodSucceeded,
+				ExitCode: 0,
+			},
 		},
 	)
 

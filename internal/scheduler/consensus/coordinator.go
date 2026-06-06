@@ -9,25 +9,32 @@ func (c *Coordinator) Propose(t LifecycleTransition) Decision {
 	var votes []Vote
 
 	for _, validator := range c.Validators {
-		votes = append(votes, validator.Validate(t))
-	}
+		vote := validator.Validate(t)
+		votes = append(votes, vote)
 
-	committed := HasQuorum(votes, c.QuorumSize)
+		if HasQuorum(votes, c.QuorumSize) {
+			yes, no := countVotes(votes)
 
-	reason := "quorum not reached"
-	if committed {
-		reason = "quorum reached"
+			return Decision{
+				Transition: t,
+				Committed:  true,
+				Votes:      votes,
+				YesVotes:   yes,
+				NoVotes:    no,
+				Reason:     "quorum reached",
+			}
+		}
 	}
 
 	yes, no := countVotes(votes)
 
 	return Decision{
 		Transition: t,
-		Committed:  committed,
+		Committed:  false,
 		Votes:      votes,
 		YesVotes:   yes,
 		NoVotes:    no,
-		Reason:     reason,
+		Reason:     "quorum not reached",
 	}
 }
 
