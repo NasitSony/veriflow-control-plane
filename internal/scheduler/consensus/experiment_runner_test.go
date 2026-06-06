@@ -70,48 +70,43 @@ func TestExperimentRunner(t *testing.T) {
 
 	results := []ExperimentResult{
 		runExperiment(
-			"valid_transition_one_byzantine_no",
+			"valid_transition_7_nodes_2_byzantine_no",
 			total,
 			Coordinator{
-				QuorumSize: 3,
-				Validators: []Validator{
-					HonestValidator{"v1"},
-					HonestValidator{"v2"},
-					HonestValidator{"v3"},
-					ByzantineValidator{"v4", AlwaysNo},
-				},
+				QuorumSize: 5,
+				Validators: buildValidators(5, 2, AlwaysNo),
 			},
 			validTransition,
 		),
 
 		runExperiment(
-			"invalid_completion_one_byzantine_yes",
+			"valid_transition_10_nodes_3_byzantine_no",
 			total,
 			Coordinator{
-				QuorumSize: 3,
-				Validators: []Validator{
-					HonestValidator{"v1"},
-					HonestValidator{"v2"},
-					HonestValidator{"v3"},
-					ByzantineValidator{"v4", AlwaysYes},
-				},
+				QuorumSize: 7,
+				Validators: buildValidators(7, 3, AlwaysNo),
+			},
+			validTransition,
+		),
+
+		runExperiment(
+			"invalid_completion_7_nodes_2_byzantine_yes",
+			total,
+			Coordinator{
+				QuorumSize: 5,
+				Validators: buildValidators(5, 2, AlwaysYes),
 			},
 			invalidTransition,
 		),
 
 		runExperiment(
-			"valid_transition_one_delayed",
+			"invalid_completion_10_nodes_3_byzantine_yes",
 			total,
 			Coordinator{
-				QuorumSize: 3,
-				Validators: []Validator{
-					HonestValidator{"v1"},
-					HonestValidator{"v2"},
-					HonestValidator{"v3"},
-					ByzantineValidator{"v4", Delayed},
-				},
+				QuorumSize: 7,
+				Validators: buildValidators(7, 3, AlwaysYes),
 			},
-			validTransition,
+			invalidTransition,
 		),
 	}
 
