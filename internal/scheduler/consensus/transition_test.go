@@ -1,3 +1,7 @@
+package consensus
+
+import "testing"
+
 func TestInvalidTransitionRejected(
 	t *testing.T,
 ) {
