@@ -22,8 +22,10 @@ func LogDecision(d Decision) {
 	}
 
 	fmt.Printf(
-		"[DECISION] committed=%v reason=%s\n",
+		"[DECISION] committed=%v yes=%d no=%d reason=%s\n",
 		d.Committed,
+		d.YesVotes,
+		d.NoVotes,
 		d.Reason,
 	)
 }
