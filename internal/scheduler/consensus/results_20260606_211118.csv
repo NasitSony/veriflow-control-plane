@@ -1,0 +1,7 @@
+name,total,committed,rejected,avg_latency_ns
+valid_transition_7_nodes_2_byzantine_no,100,100,0,2492
+valid_transition_10_nodes_3_byzantine_no,100,100,0,2918
+invalid_completion_7_nodes_2_byzantine_yes,100,0,100,3037
+invalid_completion_10_nodes_3_byzantine_yes,100,0,100,7349
+false_success_recovery_protected,100,0,100,1617
+false_failure_duplicate_retry_protected,100,0,100,1394

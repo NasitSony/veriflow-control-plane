@@ -133,6 +133,16 @@ func TestExperimentRunner(t *testing.T) {
 		},
 	}
 
+	falseFailureTransition := LifecycleTransition{
+		JobID: "job-false-failure",
+		From:  StateRunning,
+		To:    StateFailed,
+		Observation: PodObservation{
+			Phase:    PodSucceeded,
+			ExitCode: 0,
+		},
+	}
+
 	results := []ExperimentResult{
 		runExperiment(
 			"valid_transition_7_nodes_2_byzantine_no",
@@ -182,6 +192,15 @@ func TestExperimentRunner(t *testing.T) {
 				Validators: buildValidators(3, 1, AlwaysYes),
 			},
 			falseSuccessTransition,
+		),
+		runExperiment(
+			"false_failure_duplicate_retry_protected",
+			total,
+			Coordinator{
+				QuorumSize: 3,
+				Validators: buildValidators(3, 1, AlwaysYes),
+			},
+			falseFailureTransition,
 		),
 	}
 
