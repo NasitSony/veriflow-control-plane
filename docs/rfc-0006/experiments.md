@@ -65,3 +65,21 @@ Latency ≈ 1.5 µs
 Observation:
 
 Early quorum allows progress without waiting for delayed replicas.
+
+Experiment Results
+name,total,committed,rejected,avg_latency
+valid_transition_one_byzantine_no,100,100,0,1.338µs
+invalid_completion_one_byzantine_yes,100,0,100,1.403µs
+valid_transition_one_delayed,100,100,0,1.07µs
+
+
+
+
+Experiment Results
+name,total,committed,rejected,avg_latency
+valid_transition_7_nodes_2_byzantine_no,100,100,0,2.75µs
+valid_transition_10_nodes_3_byzantine_no,100,100,0,3.716µs
+invalid_completion_7_nodes_2_byzantine_yes,100,0,100,3.154µs
+invalid_completion_10_nodes_3_byzantine_yes,100,0,100,7.529µs
+--- PASS: TestExperimentRunner (0.00s)
+PASS

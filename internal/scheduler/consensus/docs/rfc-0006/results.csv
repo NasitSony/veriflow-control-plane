@@ -1,0 +1,5 @@
+name,total,committed,rejected,avg_latency_ns
+valid_transition_7_nodes_2_byzantine_no,100,100,0,907
+valid_transition_10_nodes_3_byzantine_no,100,100,0,1041
+invalid_completion_7_nodes_2_byzantine_yes,100,0,100,1073
+invalid_completion_10_nodes_3_byzantine_yes,100,0,100,2537
