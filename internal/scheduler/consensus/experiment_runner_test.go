@@ -10,6 +10,9 @@ import (
 
 type ExperimentResult struct {
 	Name       string
+	N          int
+	Byzantine  int
+	Quorum     int
 	Total      int
 	Committed  int
 	Rejected   int
@@ -25,6 +28,9 @@ type BaselineResult struct {
 
 func runExperiment(
 	name string,
+	n int,
+	byzantine int,
+	quorum int,
 	total int,
 	coordinator Coordinator,
 	transition LifecycleTransition,
@@ -47,6 +53,9 @@ func runExperiment(
 
 	return ExperimentResult{
 		Name:       name,
+		N:          n,
+		Byzantine:  byzantine,
+		Quorum:     quorum,
 		Total:      total,
 		Committed:  committed,
 		Rejected:   rejected,
@@ -77,7 +86,10 @@ func writeResultsCSV(results []ExperimentResult) error {
 	writer := csv.NewWriter(file)
 
 	if err := writer.Write([]string{
-		"name",
+		"scenario",
+		"n",
+		"byzantine",
+		"quorum",
 		"total",
 		"committed",
 		"rejected",
@@ -89,6 +101,9 @@ func writeResultsCSV(results []ExperimentResult) error {
 	for _, r := range results {
 		if err := writer.Write([]string{
 			r.Name,
+			fmt.Sprintf("%d", r.N),
+			fmt.Sprintf("%d", r.Byzantine),
+			fmt.Sprintf("%d", r.Quorum),
 			fmt.Sprintf("%d", r.Total),
 			fmt.Sprintf("%d", r.Committed),
 			fmt.Sprintf("%d", r.Rejected),
@@ -153,6 +168,9 @@ func TestExperimentRunner(t *testing.T) {
 	results := []ExperimentResult{
 		runExperiment(
 			"valid_transition_7_nodes_2_byzantine_no",
+			7,
+			2,
+			5,
 			total,
 			Coordinator{
 				QuorumSize: 5,
@@ -163,6 +181,9 @@ func TestExperimentRunner(t *testing.T) {
 
 		runExperiment(
 			"valid_transition_10_nodes_3_byzantine_no",
+			10,
+			3,
+			7,
 			total,
 			Coordinator{
 				QuorumSize: 7,
@@ -173,6 +194,9 @@ func TestExperimentRunner(t *testing.T) {
 
 		runExperiment(
 			"invalid_completion_7_nodes_2_byzantine_yes",
+			7,
+			2,
+			5,
 			total,
 			Coordinator{
 				QuorumSize: 5,
@@ -183,6 +207,9 @@ func TestExperimentRunner(t *testing.T) {
 
 		runExperiment(
 			"invalid_completion_10_nodes_3_byzantine_yes",
+			10,
+			3,
+			7,
 			total,
 			Coordinator{
 				QuorumSize: 7,
@@ -193,6 +220,9 @@ func TestExperimentRunner(t *testing.T) {
 
 		runExperiment(
 			"false_success_recovery_protected",
+			4,
+			1,
+			3,
 			total,
 			Coordinator{
 				QuorumSize: 3,
@@ -202,6 +232,9 @@ func TestExperimentRunner(t *testing.T) {
 		),
 		runExperiment(
 			"false_failure_duplicate_retry_protected",
+			4,
+			1,
+			3,
 			total,
 			Coordinator{
 				QuorumSize: 3,
@@ -209,15 +242,114 @@ func TestExperimentRunner(t *testing.T) {
 			},
 			falseFailureTransition,
 		),
+		runExperiment(
+			"valid_transition_4_nodes_1_byzantine_no",
+			4,
+			1,
+			3,
+			total,
+			Coordinator{
+				QuorumSize: 3,
+				Validators: buildValidators(3, 1, AlwaysNo),
+			},
+			validTransition,
+		),
+		runExperiment(
+			"valid_transition_7_nodes_2_byzantine_no",
+			7,
+			2,
+			5,
+			total,
+			Coordinator{
+				QuorumSize: 5,
+				Validators: buildValidators(5, 2, AlwaysNo),
+			},
+			validTransition,
+		),
+		runExperiment(
+			"valid_transition_10_nodes_3_byzantine_no",
+			10,
+			3,
+			7,
+			total,
+			Coordinator{
+				QuorumSize: 7,
+				Validators: buildValidators(7, 3, AlwaysNo),
+			},
+			validTransition,
+		),
+		runExperiment(
+			"invalid_completion_4_nodes_1_byzantine_yes",
+			4,
+			1,
+			3,
+			total,
+			Coordinator{
+				QuorumSize: 3,
+				Validators: buildValidators(3, 1, AlwaysYes),
+			},
+			invalidTransition,
+		),
+		runExperiment(
+			"invalid_completion_7_nodes_2_byzantine_yes",
+			7,
+			2,
+			5,
+			total,
+			Coordinator{
+				QuorumSize: 5,
+				Validators: buildValidators(5, 2, AlwaysYes),
+			},
+			invalidTransition,
+		),
+		runExperiment(
+			"invalid_completion_10_nodes_3_byzantine_yes",
+			10,
+			3,
+			7,
+			total,
+			Coordinator{
+				QuorumSize: 7,
+				Validators: buildValidators(7, 3, AlwaysYes),
+			},
+			invalidTransition,
+		),
+		runExperiment(
+			"valid_transition_7_nodes_3_byzantine_no",
+			7,
+			3,
+			5,
+			total,
+			Coordinator{
+				QuorumSize: 5,
+				Validators: buildValidators(4, 3, AlwaysNo),
+			},
+			validTransition,
+		),
+		runExperiment(
+			"valid_transition_10_nodes_4_byzantine_no",
+			10,
+			4,
+			7,
+			total,
+			Coordinator{
+				QuorumSize: 7,
+				Validators: buildValidators(6, 4, AlwaysNo),
+			},
+			validTransition,
+		),
 	}
 
 	fmt.Println("\nExperiment Results")
-	fmt.Println("name,total,committed,rejected,avg_latency")
+	fmt.Println("scenario,n,byzantine,quorum,total,committed,rejected,avg_latency")
 
 	for _, r := range results {
 		fmt.Printf(
-			"%s,%d,%d,%d,%v\n",
+			"%s,%d,%d,%d,%d,%d,%d,%v\n",
 			r.Name,
+			r.N,
+			r.Byzantine,
+			r.Quorum,
 			r.Total,
 			r.Committed,
 			r.Rejected,

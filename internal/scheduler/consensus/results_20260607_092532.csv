@@ -1,0 +1,15 @@
+scenario,n,byzantine,quorum,total,committed,rejected,avg_latency_ns
+valid_transition_7_nodes_2_byzantine_no,7,2,5,100,100,0,1173
+valid_transition_10_nodes_3_byzantine_no,10,3,7,100,100,0,1592
+invalid_completion_7_nodes_2_byzantine_yes,7,2,5,100,0,100,1663
+invalid_completion_10_nodes_3_byzantine_yes,10,3,7,100,0,100,3939
+false_success_recovery_protected,4,1,3,100,0,100,818
+false_failure_duplicate_retry_protected,4,1,3,100,0,100,1250
+valid_transition_4_nodes_1_byzantine_no,4,1,3,100,100,0,643
+valid_transition_7_nodes_2_byzantine_no,7,2,5,100,100,0,1147
+valid_transition_10_nodes_3_byzantine_no,10,3,7,100,100,0,1652
+invalid_completion_4_nodes_1_byzantine_yes,4,1,3,100,0,100,818
+invalid_completion_7_nodes_2_byzantine_yes,7,2,5,100,0,100,1695
+invalid_completion_10_nodes_3_byzantine_yes,10,3,7,100,0,100,4125
+valid_transition_7_nodes_3_byzantine_no,7,3,5,100,0,100,1671
+valid_transition_10_nodes_4_byzantine_no,10,4,7,100,0,100,4078
