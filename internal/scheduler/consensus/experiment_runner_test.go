@@ -16,6 +16,13 @@ type ExperimentResult struct {
 	AvgLatency time.Duration
 }
 
+type BaselineResult struct {
+	Name      string
+	Total     int
+	Committed int
+	Rejected  int
+}
+
 func runExperiment(
 	name string,
 	total int,
@@ -223,5 +230,67 @@ func TestExperimentRunner(t *testing.T) {
 
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func unsafeCommit(t LifecycleTransition) bool {
+	return true
+}
+
+func runUnsafeBaseline(
+	name string,
+	total int,
+	transition LifecycleTransition,
+) BaselineResult {
+	committed := 0
+	rejected := 0
+
+	for i := 0; i < total; i++ {
+		if unsafeCommit(transition) {
+			committed++
+		} else {
+			rejected++
+		}
+	}
+
+	return BaselineResult{
+		Name:      name,
+		Total:     total,
+		Committed: committed,
+		Rejected:  rejected,
+	}
+}
+
+func TestUnsafeBaseline(t *testing.T) {
+	total := 100
+
+	falseSuccessTransition := LifecycleTransition{
+		JobID: "job-false-success",
+		From:  StateRunning,
+		To:    StateSucceeded,
+		Observation: PodObservation{
+			Phase:    PodFailed,
+			ExitCode: 1,
+		},
+	}
+
+	result := runUnsafeBaseline(
+		"unsafe_false_success_committed",
+		total,
+		falseSuccessTransition,
+	)
+
+	fmt.Println("\nUnsafe Baseline Results")
+	fmt.Println("name,total,committed,rejected")
+	fmt.Printf(
+		"%s,%d,%d,%d\n",
+		result.Name,
+		result.Total,
+		result.Committed,
+		result.Rejected,
+	)
+
+	if result.Committed != total {
+		t.Fatal("expected unsafe baseline to commit every proposal")
 	}
 }
