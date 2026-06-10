@@ -340,6 +340,76 @@ func TestExperimentRunner(t *testing.T) {
 		),
 	}
 
+	results = append(results,
+
+		runExperiment(
+			"valid_transition_25_nodes_8_byzantine_no",
+			25,
+			8,
+			17,
+			total,
+			Coordinator{
+				QuorumSize: 17,
+				Validators: buildValidators(
+					25,
+					8,
+					AlwaysNo,
+				),
+			},
+			validTransition,
+		),
+
+		runExperiment(
+			"valid_transition_50_nodes_16_byzantine_no",
+			50,
+			16,
+			34,
+			total,
+			Coordinator{
+				QuorumSize: 34,
+				Validators: buildValidators(
+					50,
+					16,
+					AlwaysNo,
+				),
+			},
+			validTransition,
+		),
+
+		runExperiment(
+			"invalid_completion_25_nodes_8_byzantine_yes",
+			25,
+			8,
+			17,
+			total,
+			Coordinator{
+				QuorumSize: 17,
+				Validators: buildValidators(
+					25,
+					8,
+					AlwaysYes,
+				),
+			},
+			invalidTransition,
+		),
+
+		runExperiment(
+			"invalid_completion_50_nodes_16_byzantine_yes",
+			50,
+			16,
+			34,
+			total,
+			Coordinator{
+				QuorumSize: 34,
+				Validators: buildValidators(
+					50,
+					16,
+					AlwaysYes,
+				),
+			},
+			invalidTransition,
+		),
+	)
 	fmt.Println("\nExperiment Results")
 	fmt.Println("scenario,n,byzantine,quorum,total,committed,rejected,avg_latency")
 
@@ -424,5 +494,99 @@ func TestUnsafeBaseline(t *testing.T) {
 
 	if result.Committed != total {
 		t.Fatal("expected unsafe baseline to commit every proposal")
+	}
+}
+
+func TestSingleValidatorBaseline(t *testing.T) {
+	total := 100
+
+	validTransition := LifecycleTransition{
+		JobID: "job-valid-single",
+		From:  StateRunning,
+		To:    StateSucceeded,
+		Observation: PodObservation{
+			Phase:    PodSucceeded,
+			ExitCode: 0,
+		},
+	}
+
+	invalidTransition := LifecycleTransition{
+		JobID: "job-invalid-single",
+		From:  StateRunning,
+		To:    StateSucceeded,
+		Observation: PodObservation{
+			Phase:    PodFailed,
+			ExitCode: 1,
+		},
+	}
+
+	results := []ExperimentResult{
+		runExperiment(
+			"single_validator_honest_valid",
+			1,
+			0,
+			1,
+			total,
+			Coordinator{
+				QuorumSize: 1,
+				Validators: []Validator{
+					HonestValidator{ValidatorID: "v1"},
+				},
+			},
+			validTransition,
+		),
+
+		runExperiment(
+			"single_validator_byzantine_yes_invalid",
+			1,
+			1,
+			1,
+			total,
+			Coordinator{
+				QuorumSize: 1,
+				Validators: []Validator{
+					ByzantineValidator{
+						ValidatorID: "b1",
+						Behavior:    AlwaysYes,
+					},
+				},
+			},
+			invalidTransition,
+		),
+
+		runExperiment(
+			"single_validator_byzantine_no_valid",
+			1,
+			1,
+			1,
+			total,
+			Coordinator{
+				QuorumSize: 1,
+				Validators: []Validator{
+					ByzantineValidator{
+						ValidatorID: "b1",
+						Behavior:    AlwaysNo,
+					},
+				},
+			},
+			validTransition,
+		),
+	}
+
+	fmt.Println("\nSingle Validator Baseline")
+	fmt.Println("scenario,n,byzantine,quorum,total,committed,rejected,avg_latency")
+
+	for _, r := range results {
+		fmt.Printf(
+			"%s,%d,%d,%d,%d,%d,%d,%v\n",
+			r.Name,
+			r.N,
+			r.Byzantine,
+			r.Quorum,
+			r.Total,
+			r.Committed,
+			r.Rejected,
+			r.AvgLatency,
+		)
 	}
 }
